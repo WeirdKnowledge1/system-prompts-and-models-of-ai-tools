@@ -1,74 +1,87 @@
-# **FULL v0, Cursor, Manus, Same.dev, Lovable, Devin, Replit Agent, Windsurf Agent, VSCode Agent, Dia Browser & Trae AI (And other Open Sourced) System Prompts, Tools & AI Models**  
+# Michaud Postal Equity App (MPEA)
 
-(All the published system prompts are extracted by myself, except the already open sourced ones, Manus and Dia, which are contributions)
+This application is being developed to assist with the creation and management of legal and postal documents according to the specifications provided.
 
-🚀 **I managed to obtain FULL official v0, Manus, Cursor, Same.dev, Lovable, Devin, Replit Agent, Windsurf Agent, VSCode Agent, Dia browser & Trae AI system prompts and internal tools.**
+## Project Goal
 
-📜 Over **7000+ lines** of insights into their structure and functionality.  
+To build a comprehensive, autonomous, and lawful interface for document creation, postal dominion tracking, jurisdictional conversion, clause harmonization, and AI-driven execution within full equity authority, as per the detailed system specifications.
 
-## 📂 **Available Files**
-- **v0 Folder**  
-- **Manus Folder**
-- **Lovable Folder**
-- **Devin Folder**
-- **Same.dev Folder**
-- **Replit Folder**
-- **Windsurf Agent Folder**
-- **VSCode (Copilot) Agent Folder**
-- **Cursor Folder**
-- **Dia Folder**
-- **Trae AI Folder**
-- **Open Source prompts Folder**
-  - Codex CLI
-  - Cline
-  - Bolt
-  - RooCode
+## Current Phase: Phase 1 - Core Document Structure and Basic UI
 
----
+### Key Objectives for Phase 1:
+1.  **Project Setup & Initial UI Shell:**
+    *   Python with PyQt6 for the GUI.
+    *   Main application window with tabbed interface for Trust, Charter, Deposit, Settings, Ledgers.
+2.  **Define Core Document Models:**
+    *   Initial Python classes for Trust, Charter, Deposit documents.
+3.  **Basic Document Builder UI (Trust, Charter, Deposit):**
+    *   Simple UI views for manual data entry.
+    *   Basic Save/Load functionality (e.g., JSON/XML).
+4.  **Initial Settings Panel:**
+    *   Basic UI for the first few System Preference toggles (UI only).
+5.  **Stub AI Agent Infrastructure:**
+    *   Placeholder Python classes for core AI agents.
 
-## 🛠 **Roadmap & Feedback**
+## Setup and Installation (Tentative)
 
-🚨 **Note:** We no longer use GitHub issues for roadmap and feedback.  
-Please visit [System Prompts Roadmap & Feedback](https://systemprompts.featurebase.app/) to share your suggestions and track upcoming features.
+1.  Ensure Python 3.x is installed.
+2.  Create a virtual environment (recommended):
+    ```bash
+    python -m venv venv
+    source venv/bin/activate  # On Windows: venv\Scripts\activate
+    ```
+3.  Install dependencies:
+    ```bash
+    pip install -r requirements.txt
+    ```
+4.  Run the application:
+    ```bash
+    python main.py
+    ```
 
-🆕 **LATEST UPDATE:** 06/06/2025 
+## Project Structure
 
-## ❤️ Support the Project
+```
+michaud_postal_equity_app/
+|-- main.py                 # Main application entry point
+|-- app/
+|   |-- __init__.py
+|   |-- ui/
+|   |   |-- __init__.py
+|   |   |-- main_window.py      # Main application window
+|   |   |-- trust_view.py       # UI for Michaud Family Trust
+|   |   |-- charter_view.py     # UI for Family Postal Charter
+|   |   |-- deposit_view.py     # UI for Special Deposit Document
+|   |   |-- settings_view.py    # UI for System Preferences
+|   |   |-- ledger_view.py      # UI for Ledgers
+|   |   |-- widgets/            # Custom UI widgets
+|   |       |-- __init__.py
+|   |-- core/
+|   |   |-- __init__.py
+|   |   |-- document_models.py  # Data models for Trust, Charter, Deposit
+|   |   |-- clause_model.py     # Data model for Clauses
+|   |   |-- agents.py           # AI agent classes
+|   |-- utils/
+|   |   |-- __init__.py
+|   |   |-- constants.py        # Application constants
+|-- data/                     # For storing saved documents (Codex Vault)
+|   |-- trusts/
+|   |-- charters/
+|   |-- deposits/
+|   |-- backups/
+|   |-- codex_vault_sources/  # For user uploaded source files
+|   |   |-- uploads/
+|   |-- zip_modules/          # For ZIP module upgrades
+|-- assets/                   # For icons, images etc.
+|-- requirements.txt          # Python dependencies
+|-- README.md
+|-- AGENTS.md                 # (If provided)
+```
 
-If you find this collection valuable and appreciate the effort involved in obtaining and sharing these insights, please consider supporting the project. Your contribution helps keep this resource updated and allows for further exploration.
+## Contributing
 
-You can show your support via:
+Details to be added as the project progresses.
 
-*   **PayPal:** `lucknitelol@proton.me`
-*   **Cryptocurrency:**
-    *   **BTC:** `bc1q7zldmzjwspnaa48udvelwe6k3fef7xrrhg5625`
-    *   **LTC:** `LRWgqwEYDwqau1WeiTs6Mjg85NJ7m3fsdQ`
+## License
 
-Thank you for your support! 🙏
-
-
-## 🔗 **Connect With Me**  
-✖ **X:** [NotLucknite](https://x.com/NotLucknite)  
-💬 **Discord:** `x1xh`  
-
-## 🛡️ **Security Notice for AI Startups***
-
-⚠️ **If you're an AI startup, make sure your data is secure.** Exposed prompts or AI models can easily become a target for hackers.
-
-🔐 **Interested in securing your AI systems?**  
-Check out **[ZeroLeaks](https://0leaks.vercel.app)**, a service designed to help startups **identify and secure** leaks in system instructions, internal tools, and model configurations. **Get a free AI security audit** to ensure your AI is protected from vulnerabilities.
-
-
-**The company is mine, this is NOT a 3rd party AD.*
-
-## 📊 **Star History**
-
-<a href="https://www.star-history.com/#x1xhlol/system-prompts-and-models-of-ai-tools&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=x1xhlol/system-prompts-and-models-of-ai-tools&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=x1xhlol/system-prompts-and-models-of-ai-tools&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=x1xhlol/system-prompts-and-models-of-ai-tools&type=Date" />
- </picture>
-</a>
-
-⭐ **Drop a star if you find this useful!**
+To be determined.
