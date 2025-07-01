@@ -1,17 +1,18 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QGridLayout, QLabel, QLineEdit,
                              QTextEdit, QPushButton, QMessageBox, QListWidget, QFileDialog,
-                             QHBoxLayout, QGroupBox)
+                             QHBoxLayout, QGroupBox, QListWidgetItem) # Added QListWidgetItem
 from PyQt6.QtCore import Qt
 import json
 import os
 import datetime
-import uuid # Import uuid
+import uuid
 
 from app.core.document_models import MichaudFamilyPostalCharter
 from app.core.clause_model import Clause
 from app.ui.dialogs.edit_clause_dialog import EditClauseDialog
 from app.ui.dialogs.qr_display_dialog import QRDisplayDialog
 from app.core.agents import ClauseConformer, VeritasProof, DocumentTracker
+from app.core.document_utils import generate_display_clause_numbers # Import
 from app.utils.constants import CODEX_VAULT_DIR
 
 class CharterView(QWidget):
@@ -19,7 +20,7 @@ class CharterView(QWidget):
         super().__init__(parent)
         self.current_document_path = None
         self.document = MichaudFamilyPostalCharter(name="Untitled Michaud Family Postal Charter")
-        self.is_modified = False # Initialize is_modified flag
+        self.is_modified = False
         self._setup_ui()
         self._connect_modification_signals()
 
@@ -33,6 +34,7 @@ class CharterView(QWidget):
         self.vienna_ref_input.textChanged.connect(self._mark_as_modified)
         self.postal_treaty_input.textChanged.connect(self._mark_as_modified)
         self.family_trust_ref_input.textChanged.connect(self._mark_as_modified)
+        self.upu_tracking_number_input.textChanged.connect(self._mark_as_modified) # UPU input also marks modified
 
     def _mark_as_modified(self, text=None):
         self.is_modified = True
@@ -40,6 +42,7 @@ class CharterView(QWidget):
     def _setup_ui(self):
         main_layout = QVBoxLayout(self)
         self.jurisdiction_header_label = QLabel("Jurisdiction: N/A")
+        # ... (rest of _setup_ui from previous correct state, including UPU fields)
         self.jurisdiction_header_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.jurisdiction_header_label.setStyleSheet("font-weight: bold; font-size: 11pt; padding: 5px; background-color: #E8E8E8; border-bottom: 1px solid #C0C0C0;")
         main_layout.addWidget(self.jurisdiction_header_label)
@@ -47,7 +50,7 @@ class CharterView(QWidget):
         doc_info_layout = QGridLayout()
         self.name_label = QLabel("Charter Name:")
         self.name_input = QLineEdit()
-        self.name_input.textChanged.connect(lambda text: setattr(self.document, 'name', text)) # Also calls _mark_as_modified
+        self.name_input.textChanged.connect(lambda text: setattr(self.document, 'name', text))
         doc_info_layout.addWidget(self.name_label, 0, 0)
         doc_info_layout.addWidget(self.name_input, 0, 1)
         self.id_label = QLabel("Document ID:")
@@ -56,7 +59,7 @@ class CharterView(QWidget):
         doc_info_layout.addWidget(self.id_display, 1, 1)
         self.jurisdiction_label = QLabel("Jurisdiction:")
         self.jurisdiction_input = QLineEdit(self.document.jurisdiction)
-        self.jurisdiction_input.textChanged.connect(self._update_document_jurisdiction) # Also calls _mark_as_modified
+        self.jurisdiction_input.textChanged.connect(self._update_document_jurisdiction)
         doc_info_layout.addWidget(self.jurisdiction_label, 2, 0)
         doc_info_layout.addWidget(self.jurisdiction_input, 2, 1)
         doc_info_group.setLayout(doc_info_layout)
@@ -91,21 +94,17 @@ class CharterView(QWidget):
         self.family_trust_ref_input = QLineEdit()
         charter_details_layout.addWidget(self.family_trust_ref_label)
         charter_details_layout.addWidget(self.family_trust_ref_input)
-
-        # UPU Tracking Fields
         self.upu_tracking_number_label = QLabel("UPU Tracking Number:")
         self.upu_tracking_number_input = QLineEdit()
         self.upu_tracking_number_input.setPlaceholderText("Enter UPU tracking number if applicable")
         self.upu_tracking_number_input.textChanged.connect(self._update_jurisdictional_delivery_tag)
         charter_details_layout.addWidget(self.upu_tracking_number_label)
         charter_details_layout.addWidget(self.upu_tracking_number_input)
-
         self.jurisdictional_delivery_tag_label = QLabel("Jurisdictional Delivery Tag:")
-        self.jurisdictional_delivery_tag_display = QLabel("N/A") # Read-only display
-        self.jurisdictional_delivery_tag_display.setStyleSheet("font-style: italic; color: #555;") # Basic styling
+        self.jurisdictional_delivery_tag_display = QLabel("N/A")
+        self.jurisdictional_delivery_tag_display.setStyleSheet("font-style: italic; color: #555;")
         charter_details_layout.addWidget(self.jurisdictional_delivery_tag_label)
         charter_details_layout.addWidget(self.jurisdictional_delivery_tag_display)
-
         charter_details_group.setLayout(charter_details_layout)
         main_layout.addWidget(charter_details_group)
         clauses_group = QGroupBox("Clauses")
@@ -119,35 +118,47 @@ class CharterView(QWidget):
         self.sel_clause_id_value = QLabel("")
         selected_clause_layout.addWidget(self.sel_clause_id_label, 0, 0)
         selected_clause_layout.addWidget(self.sel_clause_id_value, 0, 1)
+        self.sel_clause_display_number_label = QLabel("Display No.:")
+        self.sel_clause_display_number_value = QLabel("")
+        selected_clause_layout.addWidget(self.sel_clause_display_number_label, 1, 0)
+        selected_clause_layout.addWidget(self.sel_clause_display_number_value, 1, 1)
         self.sel_clause_jurisdiction_label = QLabel("Jurisdiction:")
         self.sel_clause_jurisdiction_value = QLabel("")
-        selected_clause_layout.addWidget(self.sel_clause_jurisdiction_label, 1, 0)
-        selected_clause_layout.addWidget(self.sel_clause_jurisdiction_value, 1, 1)
+        selected_clause_layout.addWidget(self.sel_clause_jurisdiction_label, 2, 0)
+        selected_clause_layout.addWidget(self.sel_clause_jurisdiction_value, 2, 1)
         self.sel_clause_origin_label = QLabel("Origin:")
         self.sel_clause_origin_value = QLabel("")
-        selected_clause_layout.addWidget(self.sel_clause_origin_label, 2, 0)
-        selected_clause_layout.addWidget(self.sel_clause_origin_value, 2, 1)
+        selected_clause_layout.addWidget(self.sel_clause_origin_label, 3, 0)
+        selected_clause_layout.addWidget(self.sel_clause_origin_value, 3, 1)
         self.sel_clause_text_label = QLabel("Text:")
         self.sel_clause_text_value = QTextEdit()
         self.sel_clause_text_value.setReadOnly(True)
-        selected_clause_layout.addWidget(self.sel_clause_text_label, 3, 0)
-        selected_clause_layout.addWidget(self.sel_clause_text_value, 4, 0, 1, 2)
+        selected_clause_layout.addWidget(self.sel_clause_text_label, 4, 0)
+        selected_clause_layout.addWidget(self.sel_clause_text_value, 5, 0, 1, 2)
         self.sel_clause_purpose_label = QLabel("Purpose/Type:")
         self.sel_clause_purpose_value = QLabel("")
-        selected_clause_layout.addWidget(self.sel_clause_purpose_label, 5, 0)
-        selected_clause_layout.addWidget(self.sel_clause_purpose_value, 5, 1)
+        selected_clause_layout.addWidget(self.sel_clause_purpose_label, 6, 0)
+        selected_clause_layout.addWidget(self.sel_clause_purpose_value, 6, 1)
+        self.sel_clause_level_label = QLabel("Level:")
+        self.sel_clause_level_value = QLabel("")
+        selected_clause_layout.addWidget(self.sel_clause_level_label, 7,0)
+        selected_clause_layout.addWidget(self.sel_clause_level_value, 7,1)
+        self.sel_clause_section_title_label = QLabel("Section Title:")
+        self.sel_clause_section_title_value = QLabel("")
+        selected_clause_layout.addWidget(self.sel_clause_section_title_label, 8,0)
+        selected_clause_layout.addWidget(self.sel_clause_section_title_value, 8,1)
         self.sel_clause_created_label = QLabel("Created:")
         self.sel_clause_created_value = QLabel("")
-        selected_clause_layout.addWidget(self.sel_clause_created_label, 6, 0)
-        selected_clause_layout.addWidget(self.sel_clause_created_value, 6, 1)
+        selected_clause_layout.addWidget(self.sel_clause_created_label, 9, 0)
+        selected_clause_layout.addWidget(self.sel_clause_created_value, 9, 1)
         self.sel_clause_modified_label = QLabel("Modified:")
         self.sel_clause_modified_value = QLabel("")
-        selected_clause_layout.addWidget(self.sel_clause_modified_label, 7, 0)
-        selected_clause_layout.addWidget(self.sel_clause_modified_value, 7, 1)
+        selected_clause_layout.addWidget(self.sel_clause_modified_label, 10, 0)
+        selected_clause_layout.addWidget(self.sel_clause_modified_value, 10, 1)
         self.sel_clause_version_label = QLabel("Version:")
         self.sel_clause_version_value = QLabel("")
-        selected_clause_layout.addWidget(self.sel_clause_version_label, 8, 0)
-        selected_clause_layout.addWidget(self.sel_clause_version_value, 8, 1)
+        selected_clause_layout.addWidget(self.sel_clause_version_label, 11, 0)
+        selected_clause_layout.addWidget(self.sel_clause_version_value, 11, 1)
         buttons_sel_clause_layout = QHBoxLayout()
         self.edit_selected_clause_button = QPushButton("Edit Selected Clause")
         self.edit_selected_clause_button.setEnabled(False)
@@ -161,7 +172,7 @@ class CharterView(QWidget):
         buttons_sel_clause_layout.addWidget(self.edit_selected_clause_button)
         buttons_sel_clause_layout.addWidget(self.view_audit_button)
         buttons_sel_clause_layout.addWidget(self.generate_qr_button)
-        selected_clause_layout.addLayout(buttons_sel_clause_layout, 9, 0, 1, 2)
+        selected_clause_layout.addLayout(buttons_sel_clause_layout, 12, 0, 1, 2)
         self.selected_clause_details_group.setLayout(selected_clause_layout)
         self.selected_clause_details_group.setVisible(False)
         clauses_layout.addWidget(self.selected_clause_details_group)
@@ -208,7 +219,6 @@ class CharterView(QWidget):
 
     def _collect_data_from_ui(self):
         self.document.name = self.name_input.text()
-        # self.document.jurisdiction handled by _update_document_jurisdiction
         self.document.upu_recognized_format_details = self.upu_format_input.toPlainText()
         self.document.global_upu_tracking_number_fields = self.global_tracking_input.toPlainText()
         self.document.canada_post_format_compliance_details = self.canada_post_input.toPlainText()
@@ -217,38 +227,50 @@ class CharterView(QWidget):
         self.document.postal_treaty_law_reference_details = self.postal_treaty_input.toPlainText()
         self.document.family_trust_ref = self.family_trust_ref_input.text()
         self.document.upu_tracking_number = self.upu_tracking_number_input.text().strip()
-        # jurisdictional_delivery_tag is auto-generated, so no need to collect from UI, but ensure it's in model
-        if self.document.upu_tracking_number: # Re-generate if UPU number exists
+        if self.document.upu_tracking_number:
             self._generate_and_set_delivery_tag()
         else:
             self.document.jurisdictional_delivery_tag = None
 
-
     def _generate_and_set_delivery_tag(self):
-        """Generates and sets the jurisdictional delivery tag based on UPU number."""
         if self.document.upu_tracking_number:
-            # Simplified generation: LEXPOST-CA-MB-UPU-[YEAR]-[LAST4OFUPU_OR_001]
-            # A more robust sequence would require persistent state.
             year = datetime.datetime.now().year
             sequence = self.document.upu_tracking_number[-4:] if len(self.document.upu_tracking_number) >= 4 else "001"
-            # Assuming jurisdiction might provide more parts like "CA-MB"
-            # For now, using fixed placeholders.
-            # TODO: Get CA-MB or similar from document context or settings.
             prefix = "LEXPOST-CA-MB-UPU"
             self.document.jurisdictional_delivery_tag = f"{prefix}-{year}-{sequence}"
         else:
             self.document.jurisdictional_delivery_tag = None
-
         self.jurisdictional_delivery_tag_display.setText(self.document.jurisdictional_delivery_tag or "N/A")
         self._mark_as_modified()
 
+    def _update_jurisdictional_delivery_tag(self, text=None): # text arg for signal
+        self.document.upu_tracking_number = self.upu_tracking_number_input.text().strip() # update model first
+        self._generate_and_set_delivery_tag() # then generate tag and update UI/model for tag
 
-    def _update_jurisdictional_delivery_tag(self):
-        """Connected to upu_tracking_number_input.textChanged signal."""
-        self.document.upu_tracking_number = self.upu_tracking_number_input.text().strip()
-        self._generate_and_set_delivery_tag()
-        # This also implicitly calls self._mark_as_modified() via _generate_and_set_delivery_tag
-
+    def _refresh_clause_list_display(self):
+        current_selected_id = None
+        if self.clauses_list_widget.currentItem():
+            current_selected_id = self.clauses_list_widget.currentItem().data(Qt.ItemDataRole.UserRole)
+        self.clauses_list_widget.clear()
+        if not self.document or not self.document.clauses:
+            self.display_selected_clause_details()
+            return
+        display_numbers = generate_display_clause_numbers(self.document.clauses)
+        new_selected_row = -1
+        for i, clause_obj in enumerate(self.document.clauses):
+            display_number = display_numbers[i] if i < len(display_numbers) else "Err!"
+            item_text = f"{display_number} {str(clause_obj)}"
+            if clause_obj.section_title:
+                item_text = f"{display_number}"
+            item = QListWidgetItem(item_text)
+            item.setData(Qt.ItemDataRole.UserRole, clause_obj.id)
+            self.clauses_list_widget.addItem(item)
+            if clause_obj.id == current_selected_id:
+                new_selected_row = i
+        if new_selected_row != -1:
+            self.clauses_list_widget.setCurrentRow(new_selected_row)
+        else:
+            self.display_selected_clause_details()
 
     def load_document_data_into_ui(self):
         self.name_input.setText(self.document.name)
@@ -264,11 +286,8 @@ class CharterView(QWidget):
         self.family_trust_ref_input.setText(self.document.family_trust_ref or "")
         self.upu_tracking_number_input.setText(self.document.upu_tracking_number or "")
         self.jurisdictional_delivery_tag_display.setText(self.document.jurisdictional_delivery_tag or "N/A")
-        self.clauses_list_widget.clear()
-        for clause_obj in self.document.clauses:
-            self.clauses_list_widget.addItem(str(clause_obj))
-        self.display_selected_clause_details()
-        self.is_modified = False # Reset modified flag
+        self._refresh_clause_list_display()
+        self.is_modified = False
         main_window_instance = self.window()
         if hasattr(main_window_instance, 'settings_view') and \
            hasattr(main_window_instance.settings_view, 'get_setting') and \
@@ -276,6 +295,7 @@ class CharterView(QWidget):
             self.run_basic_conformance_check(is_auto_check=True)
 
     def new_document(self):
+        # ... (new_document logic including DocumentTracker)
         if self.current_document_path and hasattr(self.document, 'id'):
             try:
                 doc_tracker = DocumentTracker(app_context=self.window())
@@ -288,27 +308,38 @@ class CharterView(QWidget):
         self.load_document_data_into_ui()
         QMessageBox.information(self, "New Document", "New Postal Charter document initialized.")
 
+
     def add_clause(self):
+        # ... (add_clause logic using EditClauseDialog and _refresh_clause_list_display)
         dialog = EditClauseDialog(default_jurisdiction=self.document.jurisdiction, parent=self)
         if dialog.exec():
             new_clause = dialog.get_clause()
             self.document.clauses.append(new_clause)
-            self.clauses_list_widget.addItem(str(new_clause))
-            self.clauses_list_widget.setCurrentRow(self.clauses_list_widget.count() - 1)
+            self._refresh_clause_list_display()
+            if self.clauses_list_widget.count() > 0:
+                self.clauses_list_widget.setCurrentRow(self.clauses_list_widget.count() - 1)
             QMessageBox.information(self, "Clause Added", f"Clause '{new_clause.id}' successfully added.")
             self._mark_as_modified()
 
     def display_selected_clause_details(self):
+        # ... (display_selected_clause_details logic including new fields and display number)
         selected_items = self.clauses_list_widget.selectedItems()
         if selected_items:
-            current_row = self.clauses_list_widget.currentRow()
-            if 0 <= current_row < len(self.document.clauses):
-                clause_obj = self.document.clauses[current_row]
+            list_item = selected_items[0]
+            clause_id = list_item.data(Qt.ItemDataRole.UserRole)
+            clause_obj = next((c for c in self.document.clauses if c.id == clause_id), None)
+            current_row = self.clauses_list_widget.row(list_item)
+
+            if clause_obj:
+                display_numbers = generate_display_clause_numbers(self.document.clauses)
+                self.sel_clause_display_number_value.setText(display_numbers[current_row] if current_row < len(display_numbers) else "N/A")
                 self.sel_clause_id_value.setText(clause_obj.id)
                 self.sel_clause_jurisdiction_value.setText(clause_obj.jurisdiction)
                 self.sel_clause_origin_value.setText(clause_obj.origin)
                 self.sel_clause_text_value.setPlainText(clause_obj.text)
                 self.sel_clause_purpose_value.setText(clause_obj.metadata.get("purpose_type", "N/A"))
+                self.sel_clause_level_value.setText(str(clause_obj.level))
+                self.sel_clause_section_title_value.setText(clause_obj.section_title or "N/A")
                 try: created_date = datetime.datetime.fromisoformat(clause_obj.creation_date).strftime('%Y-%m-%d %H:%M:%S')
                 except ValueError: created_date = clause_obj.creation_date
                 self.sel_clause_created_value.setText(created_date)
@@ -330,52 +361,55 @@ class CharterView(QWidget):
                 self.generate_qr_button.setToolTip("Generates a QR code for the selected clause." if qr_setting_enabled else "Enable 'QR Proof Chain Embeds' in Settings.")
             else:
                 self.selected_clause_details_group.setVisible(False)
-                self.edit_selected_clause_button.setEnabled(False)
-                self.remove_clause_button.setEnabled(False)
-                self.move_clause_up_button.setEnabled(False)
-                self.move_clause_down_button.setEnabled(False)
-                self.generate_qr_button.setEnabled(False)
+                for btn in [self.edit_selected_clause_button, self.remove_clause_button, self.move_clause_up_button, self.move_clause_down_button, self.generate_qr_button]:
+                    btn.setEnabled(False)
         else:
             self.selected_clause_details_group.setVisible(False)
-            self.edit_selected_clause_button.setEnabled(False)
-            self.remove_clause_button.setEnabled(False)
-            self.move_clause_up_button.setEnabled(False)
-            self.move_clause_down_button.setEnabled(False)
-            self.generate_qr_button.setEnabled(False)
+            for btn in [self.edit_selected_clause_button, self.remove_clause_button, self.move_clause_up_button, self.move_clause_down_button, self.generate_qr_button]:
+                btn.setEnabled(False)
 
     def edit_selected_clause(self):
-        current_row = self.clauses_list_widget.currentRow()
-        if current_row >= 0:
-            clause_to_edit = self.document.clauses[current_row]
+        # ... (edit_selected_clause logic using ID and _refresh_clause_list_display)
+        selected_items = self.clauses_list_widget.selectedItems()
+        if not selected_items: QMessageBox.warning(self, "Edit Clause", "No clause selected to edit."); return
+        list_item = selected_items[0]
+        clause_id = list_item.data(Qt.ItemDataRole.UserRole)
+        clause_to_edit = next((c for c in self.document.clauses if c.id == clause_id), None)
+        if clause_to_edit:
             dialog = EditClauseDialog(clause=clause_to_edit, parent=self)
             if dialog.exec():
-                updated_clause = dialog.get_clause()
-                self.document.clauses[current_row] = updated_clause
-                self.clauses_list_widget.item(current_row).setText(str(updated_clause))
-                self.display_selected_clause_details()
-                QMessageBox.information(self, "Clause Updated", f"Clause '{updated_clause.id}' successfully updated.")
+                self._refresh_clause_list_display()
+                for i in range(self.clauses_list_widget.count()):
+                    if self.clauses_list_widget.item(i).data(Qt.ItemDataRole.UserRole) == clause_id:
+                        self.clauses_list_widget.setCurrentRow(i)
+                        break
+                QMessageBox.information(self, "Clause Updated", f"Clause '{clause_to_edit.id}' successfully updated.")
                 self._mark_as_modified()
-        else:
-            QMessageBox.warning(self, "Edit Clause", "No clause selected.")
+        else: QMessageBox.critical(self, "Error", f"Could not find clause with ID {clause_id} to edit.")
+
 
     def remove_selected_clause(self):
-        current_row = self.clauses_list_widget.currentRow()
-        if current_row >= 0:
-            clause_obj = self.document.clauses[current_row]
+        # ... (remove_selected_clause logic using ID and _refresh_clause_list_display)
+        selected_items = self.clauses_list_widget.selectedItems()
+        if not selected_items: QMessageBox.warning(self, "Remove Clause", "No clause selected to remove."); return
+        list_item = selected_items[0]
+        clause_id = list_item.data(Qt.ItemDataRole.UserRole)
+        clause_to_remove = next((c for c in self.document.clauses if c.id == clause_id), None)
+        if clause_to_remove:
             reply = QMessageBox.question(self, "Remove Clause",
-                                         f"Are you sure you want to remove clause: {clause_obj.id}?",
+                                         f"Are you sure you want to remove: {str(clause_to_remove)}?",
                                          QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                                          QMessageBox.StandardButton.No)
             if reply == QMessageBox.StandardButton.Yes:
-                self.document.clauses.pop(current_row)
-                self.clauses_list_widget.takeItem(current_row)
-                self.display_selected_clause_details()
-                QMessageBox.information(self, "Clause Removed", f"Clause {clause_obj.id} removed.")
+                self.document.clauses.remove(clause_to_remove)
+                self._refresh_clause_list_display()
+                QMessageBox.information(self, "Clause Removed", f"Clause {clause_to_remove.id} removed.")
                 self._mark_as_modified()
-        else:
-            QMessageBox.warning(self, "Remove Clause", "No clause selected.")
+        else: QMessageBox.critical(self, "Error", f"Could not find clause with ID {clause_id} to remove.")
+
 
     def save_document(self, silent=False):
+        # ... (save_document logic including DocumentTracker)
         self._collect_data_from_ui()
         if not self._validate_document_basic():
             if not silent: QMessageBox.warning(self, "Validation Failed", "Cannot save document due to validation errors.")
@@ -403,7 +437,9 @@ class CharterView(QWidget):
             else: print(f"Auto-save error for {self.current_document_path}: {e}")
             return False
 
+
     def save_document_as(self, silent=False):
+        # ... (save_document_as logic including DocumentTracker and new ID generation)
         self._collect_data_from_ui()
         if not self._validate_document_basic():
             if not silent: QMessageBox.warning(self, "Validation Failed", "Cannot save document due to validation errors.")
@@ -447,7 +483,9 @@ class CharterView(QWidget):
             else: print(f"Auto-save (as new) error for {self.current_document_path}: {e}")
             return False
 
+
     def load_document(self):
+        # ... (load_document logic including DocumentTracker)
         if self.current_document_path and hasattr(self.document, 'id'):
             try:
                 doc_tracker = DocumentTracker(app_context=self.window())
@@ -474,48 +512,51 @@ class CharterView(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Load Error", f"Could not load document: {e}")
 
+
     def move_clause_up(self):
+        # ... (move_clause_up logic with _refresh_clause_list_display)
         current_row = self.clauses_list_widget.currentRow()
         if current_row > 0:
             clause_to_move = self.document.clauses.pop(current_row)
             self.document.clauses.insert(current_row - 1, clause_to_move)
-            item = self.clauses_list_widget.takeItem(current_row)
-            self.clauses_list_widget.insertItem(current_row - 1, item)
+            self._refresh_clause_list_display()
             self.clauses_list_widget.setCurrentRow(current_row - 1)
             self._mark_as_modified()
 
     def move_clause_down(self):
+        # ... (move_clause_down logic with _refresh_clause_list_display)
         current_row = self.clauses_list_widget.currentRow()
         if 0 <= current_row < self.clauses_list_widget.count() - 1:
             clause_to_move = self.document.clauses.pop(current_row)
             self.document.clauses.insert(current_row + 1, clause_to_move)
-            item = self.clauses_list_widget.takeItem(current_row)
-            self.clauses_list_widget.insertItem(current_row + 1, item)
+            self._refresh_clause_list_display()
             self.clauses_list_widget.setCurrentRow(current_row + 1)
             self._mark_as_modified()
 
     def _generate_clause_qr_code(self):
-        current_row = self.clauses_list_widget.currentRow()
-        if current_row >= 0:
-            if 0 <= current_row < len(self.document.clauses):
-                clause_obj = self.document.clauses[current_row]
-                main_window_instance = self.window()
-                if hasattr(main_window_instance, 'settings_view') and \
-                   main_window_instance.settings_view.get_setting("qr_proof_chain_embeds_enabled"):
-                    veritas = VeritasProof(app_context=main_window_instance)
-                    qr_data = f"ClauseID: {clause_obj.id}\nText: {clause_obj.text[:100]}..."
-                    pixmap = veritas.generate_qr_for_text(qr_data)
-                    if pixmap:
-                        dialog = QRDisplayDialog(pixmap, title=f"QR Code - Clause {clause_obj.id}", parent=self)
-                        dialog.exec()
-                    else:
-                        QMessageBox.warning(self, "QR Generation Failed", "Could not generate QR code.")
-                else:
-                    QMessageBox.information(self, "QR Generation Disabled", "Enable 'QR Proof Chain Embeds' in Settings.")
-        else:
-            QMessageBox.warning(self, "QR Generation Error", "No clause selected.")
+        # ... (_generate_clause_qr_code logic)
+        selected_items = self.clauses_list_widget.selectedItems()
+        if not selected_items: QMessageBox.warning(self, "QR Generation Error", "No clause selected."); return
+        list_item = selected_items[0]
+        clause_id = list_item.data(Qt.ItemDataRole.UserRole)
+        clause_obj = next((c for c in self.document.clauses if c.id == clause_id), None)
+        if clause_obj:
+            main_window_instance = self.window()
+            if hasattr(main_window_instance, 'settings_view') and \
+               main_window_instance.settings_view.get_setting("qr_proof_chain_embeds_enabled"):
+                veritas = VeritasProof(app_context=main_window_instance)
+                qr_data = f"ClauseID: {clause_obj.id}\nText: {clause_obj.text[:100]}..."
+                pixmap = veritas.generate_qr_for_text(qr_data)
+                if pixmap:
+                    dialog = QRDisplayDialog(pixmap, title=f"QR Code - Clause {clause_obj.id}", parent=self)
+                    dialog.exec()
+                else: QMessageBox.warning(self, "QR Generation Failed", "Could not generate QR code.")
+            else: QMessageBox.information(self, "QR Generation Disabled", "Enable 'QR Proof Chain Embeds' in Settings.")
+        else: QMessageBox.critical(self, "Error", f"Could not find clause with ID {clause_id} for QR generation.")
+
 
     def _validate_document_basic(self) -> bool:
+        # ... (_validate_document_basic logic)
         self._collect_data_from_ui()
         errors = []
         if not self.document.name.strip(): errors.append("Charter Name cannot be empty.")
@@ -526,6 +567,7 @@ class CharterView(QWidget):
         return True
 
     def run_basic_conformance_check(self, is_auto_check=False):
+        # ... (run_basic_conformance_check logic)
         self._collect_data_from_ui()
         main_window_instance = self.window()
         conformer = ClauseConformer(app_context=main_window_instance)
@@ -551,7 +593,6 @@ class CharterView(QWidget):
 
 if __name__ == '__main__':
     import sys
-    from PyQt6.QtWidgets import QApplication
     app = QApplication(sys.argv)
     charter_view = CharterView()
     charter_view.setWindowTitle("Test Michaud Family Postal Charter View")

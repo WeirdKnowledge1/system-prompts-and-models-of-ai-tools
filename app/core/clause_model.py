@@ -4,18 +4,20 @@ import datetime
 class Clause:
     """
     Represents a single clause within a document.
-    Part IV.A - Rudimentary Clause Engine
     """
     def __init__(self, text: str, clause_id: str = None,
-                 jurisdiction: str = "Lex Aequies", origin: str = "User Input"):
+                 jurisdiction: str = "Lex Aequies", origin: str = "User Input",
+                 level: int = 1, section_title: str | None = None): # New attributes
         self.id = clause_id if clause_id else f"CL-{uuid.uuid4().hex[:8].upper()}"
         self.text = text
-        self.jurisdiction = jurisdiction # E.g., "Lex Aequies", "Lex Postalis", "Lex Naturalis"
-        self.origin = origin # E.g., "User Input", "Template", "Uploaded Doc", "AI Generated"
+        self.jurisdiction = jurisdiction
+        self.origin = origin
         self.creation_date = datetime.datetime.now().isoformat()
         self.last_modified_date = self.creation_date
         self.version = 1
-        self.metadata = {} # For future use, e.g., linkage, validation status
+        self.metadata = {}
+        self.level = max(1, level) # Ensure level is at least 1
+        self.section_title = section_title
 
     def update_text(self, new_text: str):
         self.text = new_text
@@ -28,7 +30,12 @@ class Clause:
         self.version += 1
 
     def __str__(self):
-        return f"ID: {self.id} ({self.jurisdiction}) - {self.text[:50]}{'...' if len(self.text) > 50 else ''}"
+        # The dynamic display number will be prepended by the UI view.
+        # This string representation is for the content part of the list item.
+        # It should not include the ID, as that's in the details panel.
+        # Section title will be part of the display number if present.
+        text_summary = self.text[:70] + "..." if len(self.text) > 70 else self.text
+        return f"({self.jurisdiction}) {text_summary}"
 
     def to_dict(self) -> dict:
         """Serializes the clause to a dictionary."""
@@ -41,6 +48,8 @@ class Clause:
             "last_modified_date": self.last_modified_date,
             "version": self.version,
             "metadata": self.metadata,
+            "level": self.level,                 # New
+            "section_title": self.section_title, # New
         }
 
     @classmethod
@@ -48,9 +57,11 @@ class Clause:
         """Deserializes a clause from a dictionary."""
         clause = cls(
             text=data.get("text", ""),
-            clause_id=data.get("id"), # Will generate new if None
+            clause_id=data.get("id"),
             jurisdiction=data.get("jurisdiction", "Lex Aequies"),
-            origin=data.get("origin", "User Input")
+            origin=data.get("origin", "User Input"),
+            level=data.get("level", 1),                             # New
+            section_title=data.get("section_title")                 # New
         )
         # Preserve original creation/modification dates and version if available
         clause.creation_date = data.get("creation_date", clause.creation_date)

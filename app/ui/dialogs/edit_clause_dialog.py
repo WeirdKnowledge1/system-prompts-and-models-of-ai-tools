@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QFormLayout, QLineEdit,
-                             QTextEdit, QComboBox, QDialogButtonBox, QLabel)
+                             QTextEdit, QComboBox, QDialogButtonBox, QLabel, QSpinBox) # Added QSpinBox
 from PyQt6.QtCore import Qt
 from app.core.clause_model import Clause
 
@@ -45,6 +45,19 @@ class EditClauseDialog(QDialog):
         self.purpose_type_edit.setPlaceholderText("e.g., Ownership, Notice, Remedy, Appointment of Trustee")
         form_layout.addRow(QLabel("Purpose/Type (Optional):"), self.purpose_type_edit)
 
+        # Level (for hierarchical numbering)
+        self.level_spinbox = QSpinBox()
+        self.level_spinbox.setMinimum(1) # Level must be at least 1
+        self.level_spinbox.setMaximum(10) # Arbitrary max level, can be adjusted
+        self.level_spinbox.setToolTip("Sets the hierarchical level for numbering (e.g., 1 for main section, 2 for sub-section).")
+        form_layout.addRow(QLabel("Hierarchy Level:"), self.level_spinbox)
+
+        # Section Title (optional, for clauses that start a new named section)
+        self.section_title_edit = QLineEdit()
+        self.section_title_edit.setPlaceholderText("Optional: e.g., 'Article I: Definitions', 'Part 2: Conveyance'")
+        self.section_title_edit.setToolTip("If this clause starts a new named section, enter its title here.")
+        form_layout.addRow(QLabel("Section Title (Optional):"), self.section_title_edit)
+
         main_layout.addLayout(form_layout)
 
         # Dialog Buttons (Save, Cancel)
@@ -68,22 +81,30 @@ class EditClauseDialog(QDialog):
                 self.jurisdiction_combo.setCurrentText(self.clause.jurisdiction)
             self.origin_edit.setText(self.clause.origin)
             self.purpose_type_edit.setText(self.clause.metadata.get("purpose_type", ""))
+            self.level_spinbox.setValue(self.clause.level if hasattr(self.clause, 'level') else 1)
+            self.section_title_edit.setText(self.clause.section_title if hasattr(self.clause, 'section_title') else "")
+        else: # For new clause, set defaults
+            self.level_spinbox.setValue(1) # Default level
+            self.jurisdiction_combo.setCurrentText(self.default_jurisdiction)
+
 
     def _apply_changes_to_clause(self):
         """Applies changes from dialog fields back to the self.clause object."""
         self.clause.text = self.text_edit.toPlainText().strip()
         self.clause.jurisdiction = self.jurisdiction_combo.currentText()
         self.clause.origin = self.origin_edit.text().strip()
+        self.clause.level = self.level_spinbox.value()
+        section_title_text = self.section_title_edit.text().strip()
+        self.clause.section_title = section_title_text if section_title_text else None # Store None if empty
 
         purpose_type = self.purpose_type_edit.text().strip()
         if purpose_type:
             self.clause.metadata["purpose_type"] = purpose_type
         elif "purpose_type" in self.clause.metadata:
-            del self.clause.metadata["purpose_type"] # Remove if blanked out
+            del self.clause.metadata["purpose_type"]
 
-        if self.is_new_clause and not self.clause.id.startswith("CL-"): # Ensure new clauses get a default ID if not set
-            self.clause.id = f"CL-{uuid.uuid4().hex[:8].upper()}" # Should be handled by Clause constructor, but as a fallback.
-                                                                # Clause model already handles ID generation.
+        # ID is handled by constructor for new, or preserved for existing.
+        # Version and dates are handled by Clause model itself or by document save logic.
 
     def accept(self):
         """Called when Save is clicked."""

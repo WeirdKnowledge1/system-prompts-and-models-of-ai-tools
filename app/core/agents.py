@@ -2,8 +2,11 @@
 import qrcode
 import io
 from PyQt6.QtGui import QPixmap, QImage
-import os # Already imported, but good to note for AutoBackup and DocumentTracker
-import datetime # Already imported
+import os
+import datetime
+import re # For regex-based cross-reference search
+
+from app.core.document_utils import generate_display_clause_numbers # Import for numbering checks
 
 class BaseAgent:
     """
@@ -168,6 +171,51 @@ class ClauseConformer(BaseAgent):
                              f"or the primary Lex Triad. Requires review.",
                     "severity": "info"
                 })
+
+        # New Check 4: Numbering Consistency (using generate_display_clause_numbers)
+        if document_obj.clauses:
+            try:
+                display_numbers = generate_display_clause_numbers(document_obj.clauses)
+                seen_numbers = set()
+                for i, num_str in enumerate(display_numbers):
+                    clause_id_for_issue = document_obj.clauses[i].id if i < len(document_obj.clauses) else document_obj.id
+                    if "Err!" in num_str: # Error from numbering function
+                        issues_report.append({
+                            "id": clause_id_for_issue,
+                            "issue": f"Clause {i+1} (or around it) has a numbering generation error: '{num_str}'. Review clause levels/titles.",
+                            "severity": "warning"
+                        })
+                    # Basic duplicate check for generated numbers (excluding errors and simple section titles that might not be unique)
+                    if num_str not in seen_numbers and not num_str.startswith("SECTION") and not re.match(r"^[A-Z]\.\s", num_str) :
+                        seen_numbers.add(num_str)
+                    elif num_str in seen_numbers and num_str != "Err!" and not num_str.startswith("SECTION") and not re.match(r"^[A-Z]\.\s", num_str):
+                         issues_report.append({
+                            "id": clause_id_for_issue,
+                            "issue": f"Duplicate display number '{num_str}' generated for Clause {i+1} (or around it). Check levels/titles.",
+                            "severity": "warning"
+                        })
+                # TODO: More sophisticated sequence logic (e.g., 1.1 then 1.3 without 1.2) is complex and deferred.
+            except Exception as e:
+                issues_report.append({ "id": document_obj.id, "issue": f"Error during clause number generation for checks: {e}", "severity": "error"})
+
+        # New Check 5: Placeholder Cross-Reference Text Search
+        cross_ref_patterns = [
+            r"See Clause\s+[\w\.]+", r"Refers to Section\s+[\w\.]+",
+            r"Article\s+[\w\.]+", r"as per paragraph\s+[\w\.]+",
+            r"pursuant to section\s+[\w\.]+" # Added another common pattern
+        ]
+        compiled_patterns = [re.compile(p, re.IGNORECASE) for p in cross_ref_patterns]
+
+        for i, clause in enumerate(document_obj.clauses):
+            for pattern in compiled_patterns:
+                if pattern.search(clause.text):
+                    issues_report.append({
+                        "id": clause.id,
+                        "issue": f"Clause {i+1} (ID: {clause.id}) may contain a text-based cross-reference. Manual verification of target and number accuracy needed.",
+                        "severity": "info"
+                    })
+                    break # Only report one type of cross-ref finding per clause for this basic check
+
 
         if not issues_report:
             print(f"{self.agent_name}: No basic issues found in {document_obj.name}.")

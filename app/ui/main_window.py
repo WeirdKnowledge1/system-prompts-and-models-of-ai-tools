@@ -104,14 +104,33 @@ class MainWindow(QMainWindow):
                 # The view's save_document method needs to accept a silent parameter
                 # and not show popups if silent is True.
                 if hasattr(active_view, 'save_document'):
-                    active_view.save_document(silent=True)
-                    # The save_document method should now clear its own is_modified flag.
-            else:
-                # Optionally, could save new, unsaved documents to a temp/autosave location
-                # For now, we skip auto-saving new, unnamed documents.
-                print(f"Auto-save skipped for new/unsaved document: {active_view.document.name}")
+                    active_view.save_document(silent=True) # This clears is_modified
+            else: # No current_document_path, but document is modified (it's a new document)
+                try:
+                    autosave_dir = os.path.join(CODEX_VAULT_DIR, "autosaves")
+                    os.makedirs(autosave_dir, exist_ok=True)
+
+                    doc_type_name = active_view.document.doc_type.replace(" ", "_")
+                    # Use a portion of the document's current in-memory ID for the autosave filename
+                    doc_id_part = active_view.document.id.split('-')[0] # first part of UUID
+                    filename = f"{doc_type_name}_{doc_id_part}_autosave_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.json"
+                    autosave_path = os.path.join(autosave_dir, filename)
+
+                    # We need a way to save document content without altering its state (is_modified, current_path)
+                    # or creating a new ID, just dumping its current content.
+                    # The existing save_document/save_document_as are not suitable directly for this type of autosave.
+                    # Let's add a simple content dump for autosaving new files.
+                    with open(autosave_path, 'w') as f:
+                        json.dump(active_view.document.to_dict(), f, indent=4)
+
+                    self.status_bar.showMessage(f"New '{active_view.document.doc_type}' auto-saved to recovery area.", 5000)
+                    print(f"Auto-saved new document '{active_view.document.name}' to {autosave_path}")
+                    # DO NOT clear active_view.is_modified here, as the main document is still "new and unsaved"
+                except Exception as e:
+                    print(f"Error auto-saving new document {active_view.document.name}: {e}")
         else:
-            print("Auto-save: No active, modified document with a path to save.")
+            # print("Auto-save: No active, modified document to save.") # Reduced verbosity
+            pass
 
 
     def _apply_initial_styling(self):
@@ -511,7 +530,8 @@ class MainWindow(QMainWindow):
 
     def _ensure_data_directories_exist(self):
         base_data_dir = "data"
-        sub_dirs = ["trusts", "charters", "deposits", "backups", "codex_vault_sources", "zip_modules"]
+        sub_dirs = ["trusts", "charters", "deposits", "backups",
+                    "codex_vault_sources", "zip_modules", "autosaves"] # Added "autosaves"
         if not os.path.exists(base_data_dir):
             os.makedirs(base_data_dir)
         for sub_dir in sub_dirs:
