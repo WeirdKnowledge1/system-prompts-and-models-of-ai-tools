@@ -4,12 +4,13 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QGridLayout, QLabel, QLineEdi
 from PyQt6.QtCore import Qt
 import json
 import os
-import datetime # Import datetime
+import datetime
 
 from app.core.document_models import MichaudFamilyTrust
 from app.core.clause_model import Clause
 from app.ui.dialogs.edit_clause_dialog import EditClauseDialog
-from app.core.agents import ClauseConformer # Import ClauseConformer
+from app.ui.dialogs.qr_display_dialog import QRDisplayDialog
+from app.core.agents import ClauseConformer, VeritasProof, DocumentTracker # Import DocumentTracker
 from app.utils.constants import CODEX_VAULT_DIR
 
 class TrustView(QWidget):
@@ -21,6 +22,13 @@ class TrustView(QWidget):
 
     def _setup_ui(self):
         main_layout = QVBoxLayout(self)
+
+        # --- Jurisdiction Header Label ---
+        self.jurisdiction_header_label = QLabel("Jurisdiction: N/A")
+        self.jurisdiction_header_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # Basic styling for prominence, can be refined
+        self.jurisdiction_header_label.setStyleSheet("font-weight: bold; font-size: 11pt; padding: 5px; background-color: #E8E8E8; border-bottom: 1px solid #C0C0C0;")
+        main_layout.addWidget(self.jurisdiction_header_label)
 
         # --- Document Info Group ---
         doc_info_group = QGroupBox("Document Information")
@@ -40,7 +48,8 @@ class TrustView(QWidget):
 
         self.jurisdiction_label = QLabel("Jurisdiction:")
         self.jurisdiction_input = QLineEdit(self.document.jurisdiction)
-        self.jurisdiction_input.textChanged.connect(lambda text: setattr(self.document, 'jurisdiction', text))
+        # Update both document model and header label on text change
+        self.jurisdiction_input.textChanged.connect(self._update_document_jurisdiction)
         doc_info_layout.addWidget(self.jurisdiction_label, 2, 0)
         doc_info_layout.addWidget(self.jurisdiction_input, 2, 1)
 
@@ -159,8 +168,13 @@ class TrustView(QWidget):
         self.view_audit_button.setToolTip("Functionality to be implemented in a future phase.")
         # self.view_audit_button.clicked.connect(self.view_clause_audit_trail) # Placeholder
 
+        self.generate_qr_button = QPushButton("Generate QR Code")
+        self.generate_qr_button.setEnabled(False)
+        self.generate_qr_button.clicked.connect(self._generate_clause_qr_code)
+
         buttons_sel_clause_layout.addWidget(self.edit_selected_clause_button)
         buttons_sel_clause_layout.addWidget(self.view_audit_button)
+        buttons_sel_clause_layout.addWidget(self.generate_qr_button) # Add new button
         selected_clause_layout.addLayout(buttons_sel_clause_layout, 9, 0, 1, 2) # Add button layout
 
         self.selected_clause_details_group.setLayout(selected_clause_layout)
@@ -245,10 +259,22 @@ class TrustView(QWidget):
             self.clauses_list_widget.addItem(str(clause_obj)) # Use Clause.__str__ for display
 
     def new_document(self):
+        # If a document was loaded from a file and is being replaced by "new"
+        if self.current_document_path and hasattr(self.document, 'id'):
+            try:
+                doc_tracker = DocumentTracker(app_context=self.window())
+                doc_tracker.untrack_document(self.document.id)
+            except Exception as e:
+                print(f"Error untracking document {self.document.id} in new_document: {e}")
+
         self.document = MichaudFamilyTrust(name="Untitled Michaud Family Trust")
         self.current_document_path = None
-        self.load_document_data_into_ui()
+        self.load_document_data_into_ui() # This will also trigger auto-conformance if enabled
         QMessageBox.information(self, "New Document", "New Trust document initialized.")
+
+        # Since a new (unsaved) document is created, it's not yet tracked by path.
+        # Tracking by ID for unsaved documents could be an enhancement if needed.
+        # For now, track_document_open is primarily for file-based documents.
 
     def add_clause(self):
         # For now, a very simple way to add clauses. Will be improved with a dialog.
@@ -308,6 +334,16 @@ class TrustView(QWidget):
                 self.remove_clause_button.setEnabled(True)
                 self.move_clause_up_button.setEnabled(current_row > 0)
                 self.move_clause_down_button.setEnabled(current_row < self.clauses_list_widget.count() - 1)
+
+                # Enable/Disable QR button based on setting
+                main_window_instance = self.window()
+                qr_setting_enabled = False
+                if hasattr(main_window_instance, 'settings_view') and \
+                   hasattr(main_window_instance.settings_view, 'get_setting'):
+                    qr_setting_enabled = main_window_instance.settings_view.get_setting("qr_proof_chain_embeds_enabled")
+                self.generate_qr_button.setEnabled(qr_setting_enabled)
+                self.generate_qr_button.setToolTip("Generates a QR code for the selected clause's ID and text." if qr_setting_enabled else "Enable 'QR Proof Chain Embeds' in Settings to use this feature.")
+
             else:
                 # Should not happen if selection is valid and lists are in sync
                 self.selected_clause_details_group.setVisible(False)
@@ -315,12 +351,14 @@ class TrustView(QWidget):
                 self.remove_clause_button.setEnabled(False)
                 self.move_clause_up_button.setEnabled(False)
                 self.move_clause_down_button.setEnabled(False)
+                self.generate_qr_button.setEnabled(False)
         else:
             self.selected_clause_details_group.setVisible(False)
             self.edit_selected_clause_button.setEnabled(False)
             self.remove_clause_button.setEnabled(False)
             self.move_clause_up_button.setEnabled(False)
             self.move_clause_down_button.setEnabled(False)
+            self.generate_qr_button.setEnabled(False)
 
     def edit_selected_clause(self):
         # Placeholder for editing functionality
@@ -367,6 +405,7 @@ class TrustView(QWidget):
             return
 
         if not self.current_document_path:
+            # Document is new or path is lost, prompt for save location
             trust_dir = os.path.join(CODEX_VAULT_DIR, "trusts")
             # Sanitize document name for use as filename
             safe_filename = "".join(c if c.isalnum() or c in (' ', '_', '-') else '_' for c in self.document.name)
@@ -386,11 +425,27 @@ class TrustView(QWidget):
             with open(self.current_document_path, 'w') as f:
                 json.dump(self.document.to_dict(), f, indent=4)
             QMessageBox.information(self, "Save Successful", f"Trust document saved to\n{self.current_document_path}")
+
+            # Track document change after successful save
+            try:
+                doc_tracker = DocumentTracker(app_context=self.window())
+                doc_tracker.track_document_change(self.document.id, self.document.to_dict())
+            except Exception as e:
+                print(f"Error tracking document change for {self.document.id}: {e}")
+
         except Exception as e:
             QMessageBox.critical(self, "Save Error", f"Could not save document: {e}")
             self.current_document_path = None # Reset path if save failed
 
     def load_document(self):
+        # If a document is already loaded, untrack it first
+        if self.current_document_path and hasattr(self.document, 'id'):
+            try:
+                doc_tracker = DocumentTracker(app_context=self.window())
+                doc_tracker.untrack_document(self.document.id)
+            except Exception as e:
+                print(f"Error untracking document {self.document.id} before load: {e}")
+
         trust_dir = os.path.join(CODEX_VAULT_DIR, "trusts")
         filePath, _ = QFileDialog.getOpenFileName(
             self,
@@ -408,8 +463,16 @@ class TrustView(QWidget):
             # Use the from_dict method of the specific class
             self.document = MichaudFamilyTrust.from_dict(doc_data)
             self.current_document_path = filePath
-            self.load_document_data_into_ui()
+            self.load_document_data_into_ui() # This will also trigger auto-conformance if enabled
             QMessageBox.information(self, "Load Successful", f"Trust document loaded from\n{filePath}")
+
+            # Track newly opened document
+            try:
+                doc_tracker = DocumentTracker(app_context=self.window())
+                doc_tracker.track_document_open(self.document.id, self.current_document_path, self.document.to_dict())
+            except Exception as e:
+                print(f"Error tracking document open for {self.document.id}: {e}")
+
         except Exception as e:
             QMessageBox.critical(self, "Load Error", f"Could not load document: {e}")
             # Optionally, revert to a new blank document or keep current state
@@ -449,18 +512,116 @@ if __name__ == '__main__':
     trust_view.show()
     sys.exit(app.exec())
 
-    def run_basic_conformance_check(self):
+    def _update_document_jurisdiction(self, text: str):
+        """Updates the document model's jurisdiction and the header label."""
+        self.document.jurisdiction = text
+        self.jurisdiction_header_label.setText(f"Document Jurisdiction: {text}")
+        # Potentially trigger re-styling or other actions if jurisdiction change has wide effects
+
+    def _generate_clause_qr_code(self):
+        current_row = self.clauses_list_widget.currentRow()
+        if current_row >= 0:
+            if 0 <= current_row < len(self.document.clauses):
+                clause_obj = self.document.clauses[current_row]
+
+                # Check setting again just before generation (though button state should reflect it)
+                main_window_instance = self.window()
+                if hasattr(main_window_instance, 'settings_view') and \
+                   main_window_instance.settings_view.get_setting("qr_proof_chain_embeds_enabled"):
+
+                    veritas = VeritasProof(app_context=main_window_instance)
+                    # Combine key info for the QR code data
+                    qr_data = f"ClauseID: {clause_obj.id}\nJurisdiction: {clause_obj.jurisdiction}\nOrigin: {clause_obj.origin}\nText: {clause_obj.text[:100]}..." # Truncate text for QR
+
+                    pixmap = veritas.generate_qr_for_text(qr_data)
+
+                    if pixmap:
+                        dialog = QRDisplayDialog(pixmap, title=f"QR Code - Clause {clause_obj.id}", parent=self)
+                        dialog.exec()
+                    else:
+                        QMessageBox.warning(self, "QR Generation Failed", "Could not generate QR code for the selected clause.")
+                else:
+                    QMessageBox.information(self, "QR Generation Disabled", "Please enable 'QR Proof Chain Embeds' in System Preferences to generate QR codes.")
+        else:
+            QMessageBox.warning(self, "QR Generation Error", "No clause selected.")
+
+
+    def run_basic_conformance_check(self, is_auto_check=False):
         """Runs the basic conformance check using ClauseConformer agent."""
         self._collect_data_from_ui() # Ensure document is up-to-date
 
-        conformer = ClauseConformer() # In a real app, context might be passed
-        issues = conformer.check_document_for_basic_issues(self.document)
+        # Access MainWindow to get settings_view. This is a bit fragile.
+        # A better way would be to pass app_context or settings_view reference during init.
+        main_window = self.parent().parent().parent() # Potentially: self -> QGroupBox -> QVBoxLayout -> TrustView(QWidget) -> QStackedWidget(tab content) -> QTabWidget -> MainWindow
+        # This path might vary if the view is directly added to the tab widget or nested differently.
+        # For now, let's assume a common structure or try to get it from QApplication instance if view is top-level.
 
-        if issues:
-            report_message = "Basic Conformance Check Found Issues:\n\n" + "\n".join(f"- {issue}" for issue in issues)
-            QMessageBox.warning(self, "Conformance Issues", report_message)
+        # A more robust way to get MainWindow if views are direct children of tab content widgets:
+        # current_tab_widget = self.parentWidget()
+        # if current_tab_widget:
+        #    main_window = current_tab_widget.parentWidget().parentWidget() # Potentially
+        # This is still brittle. Best is dependency injection or a singleton app context.
+
+        # Simplification: Assume main_window can be accessed if it's a known ancestor.
+        # If self.window() returns the MainWindow instance:
+        main_window_instance = self.window()
+
+
+        conformer = ClauseConformer(app_context=main_window_instance) # Pass main_window as a basic context
+        issues_report = conformer.check_document_for_basic_issues(self.document)
+
+        if issues_report:
+            detailed_report = []
+            warning_count = 0
+            info_count = 0
+            for item in issues_report:
+                detailed_report.append(f"- ID: {item['id'][:15]}... ({item['severity']}): {item['issue']}")
+                if item['severity'] == 'warning':
+                    warning_count += 1
+                else:
+                    info_count += 1
+
+            summary = f"{len(issues_report)} issue(s) found: {warning_count} warning(s), {info_count} info."
+
+            if is_auto_check:
+                if hasattr(main_window_instance, 'status_bar'):
+                    main_window_instance.status_bar.showMessage(f"Conformance: {summary}", 10000) # Show for 10s
+                print(f"Auto Conformance Check:\n{summary}\n" + "\n".join(detailed_report))
+            else:
+                QMessageBox.warning(self, "Conformance Issues Found", summary + "\n\nDetails:\n" + "\n".join(detailed_report))
         else:
-            QMessageBox.information(self, "Conformance Check", "No basic conformance issues found.")
+            if not is_auto_check:
+                QMessageBox.information(self, "Conformance Check", "No basic conformance issues found.")
+            else:
+                if hasattr(main_window_instance, 'status_bar'):
+                     main_window_instance.status_bar.showMessage("Conformance: No basic issues found.", 5000)
+                print("Auto Conformance Check: No basic issues found.")
+
+    def load_document_data_into_ui(self):
+        """Populates UI fields from the self.document object."""
+        self.name_input.setText(self.document.name)
+        self.id_display.setText(self.document.id)
+        self.jurisdiction_input.setText(self.document.jurisdiction)
+        self.settlors_input.setText(", ".join(self.document.settlors))
+        self.trustees_input.setText(", ".join(self.document.trustees))
+        self.beneficiaries_input.setText(", ".join(self.document.beneficiaries))
+        self.land_rights_input.setPlainText(self.document.land_rights_details)
+        self.name_control_input.setPlainText(self.document.name_control_details)
+        self.mortgage_recon_input.setPlainText(self.document.equitable_mortgage_reconciliation_details)
+
+        self.clauses_list_widget.clear()
+        for clause_obj in self.document.clauses:
+            self.clauses_list_widget.addItem(str(clause_obj))
+
+        self.jurisdiction_header_label.setText(f"Document Jurisdiction: {self.document.jurisdiction}")
+        self.display_selected_clause_details()
+
+        # Auto-check if setting is enabled
+        main_window_instance = self.window()
+        if hasattr(main_window_instance, 'settings_view') and \
+           main_window_instance.settings_view.get_setting("enforce_clauseconformer_all_docs"):
+            self.run_basic_conformance_check(is_auto_check=True)
+
 
     def move_clause_up(self):
         current_row = self.clauses_list_widget.currentRow()

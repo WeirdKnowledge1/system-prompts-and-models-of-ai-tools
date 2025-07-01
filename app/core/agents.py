@@ -1,4 +1,9 @@
 # Placeholder classes for AI Agent Infrastructure (Part II.B)
+import qrcode
+import io
+from PyQt6.QtGui import QPixmap, QImage
+import os # Already imported, but good to note for AutoBackup and DocumentTracker
+import datetime # Already imported
 
 class BaseAgent:
     """
@@ -88,60 +93,91 @@ class ClauseConformer(BaseAgent):
             return ["No document provided for conformance check."]
 
         self.set_status(f"Running basic conformance check on: {document_obj.name} ({document_obj.doc_type})")
-        issues = []
+        issues_report = [] # List of issue dictionaries
 
-        # Placeholder check 1: Empty clause text
+        # Check 1: Empty clause text
         for i, clause in enumerate(document_obj.clauses):
             if not clause.text.strip():
-                issues.append(f"Clause {i+1} (ID: {clause.id}) has empty text.")
+                issues_report.append({
+                    "id": clause.id,
+                    "issue": f"Clause {i+1} has empty text.",
+                    "severity": "warning"
+                })
+            # Check 2: Clause length (new)
+            elif len(clause.text.strip()) < 10:
+                 issues_report.append({
+                    "id": clause.id,
+                    "issue": f"Clause {i+1} text is very short ({len(clause.text.strip())} chars). Review for completeness.",
+                    "severity": "info"
+                })
+            elif len(clause.text.strip()) > 1000: # Example length, can be configured
+                 issues_report.append({
+                    "id": clause.id,
+                    "issue": f"Clause {i+1} text is very long ({len(clause.text.strip())} chars). Review for conciseness.",
+                    "severity": "info"
+                })
 
-        # Placeholder check 2: Basic jurisdictional mix
-        # These are typical/expected primary jurisdictions.
+
+        # Check 3: Basic jurisdictional mix (previously check 2)
         expected_jurisdictions = {
             "Michaud Family Trust": "Lex Aequies",
             "Michaud Special Deposit Document": "Lex Aequies", # Can also have Postal elements, but primary is Aequies
             "Michaud Family Postal Charter": "Lex Postalis"
         }
 
-        doc_primary_jurisdiction = document_obj.jurisdiction # The document's own declared jurisdiction
+        doc_primary_jurisdiction = document_obj.jurisdiction
         doc_expected_primary = expected_jurisdictions.get(document_obj.doc_type)
 
         if doc_expected_primary and doc_primary_jurisdiction != doc_expected_primary:
-            issues.append(
-                f"Document's declared jurisdiction ('{doc_primary_jurisdiction}') "
-                f"differs from typical primary for its type ('{doc_expected_primary}')."
-            )
+            issues_report.append({
+                "id": document_obj.id, # Document level issue
+                "issue": f"Document's declared jurisdiction ('{doc_primary_jurisdiction}') "
+                         f"differs from typical primary for its type ('{doc_expected_primary}').",
+                "severity": "warning"
+            })
 
         for i, clause in enumerate(document_obj.clauses):
-            if document_obj.doc_type == "Michaud Family Trust" or document_obj.doc_type == "Michaud Special Deposit Document":
+            clause_issue_prefix = f"Clause {i+1} (ID: {clause.id})"
+
+            # Check for jurisdictional mix based on document type
+            if document_obj.doc_type in ["Michaud Family Trust", "Michaud Special Deposit Document"]:
                 if clause.jurisdiction == "Lex Postalis":
-                    issues.append(
-                        f"Clause {i+1} (ID: {clause.id}) in a '{document_obj.doc_type}' "
-                        f"has 'Lex Postalis' jurisdiction. Review for intended use."
-                    )
+                    issues_report.append({
+                        "id": clause.id,
+                        "issue": f"{clause_issue_prefix} in a '{document_obj.doc_type}' (typically Lex Aequies) "
+                                 f"has 'Lex Postalis' jurisdiction. Review for intended use.",
+                        "severity": "info"
+                    })
             elif document_obj.doc_type == "Michaud Family Postal Charter":
                 if clause.jurisdiction == "Lex Aequies":
-                    issues.append(
-                        f"Clause {i+1} (ID: {clause.id}) in a 'Michaud Family Postal Charter' "
-                        f"has 'Lex Aequies' jurisdiction. Review for intended use."
-                    )
-            # Could add checks for "Lex Naturalis" being present or if other unexpected jurisdictions appear.
-            if clause.jurisdiction not in ["Lex Aequies", "Lex Postalis", "Lex Naturalis", document_obj.jurisdiction]:
-                issues.append(
-                    f"Clause {i+1} (ID: {clause.id}) has an unusual jurisdiction ('{clause.jurisdiction}') "
-                    f"for this document type or its declared jurisdiction. Requires review."
-                )
+                    issues_report.append({
+                        "id": clause.id,
+                        "issue": f"{clause_issue_prefix} in a 'Michaud Family Postal Charter' (typically Lex Postalis) "
+                                 f"has 'Lex Aequies' jurisdiction. Review for intended use.",
+                        "severity": "info"
+                    })
 
+            # General check for unusual jurisdictions not matching document's or main triad
+            # (unless it's the document's own declared jurisdiction, which might be non-standard but intentional)
+            if clause.jurisdiction != document_obj.jurisdiction and \
+               clause.jurisdiction not in ["Lex Aequies", "Lex Postalis", "Lex Naturalis"]:
+                issues_report.append({
+                    "id": clause.id,
+                    "issue": f"{clause_issue_prefix} has an unusual jurisdiction ('{clause.jurisdiction}') "
+                             f"that does not match the document's declared jurisdiction ('{document_obj.jurisdiction}') "
+                             f"or the primary Lex Triad. Requires review.",
+                    "severity": "info"
+                })
 
-        if not issues:
+        if not issues_report:
             print(f"{self.agent_name}: No basic issues found in {document_obj.name}.")
         else:
-            print(f"{self.agent_name}: Found {len(issues)} basic issue(s) in {document_obj.name}.")
-            for issue in issues:
-                print(f"  - {issue}")
+            print(f"{self.agent_name}: Found {len(issues_report)} basic issue(s) in {document_obj.name}.")
+            for issue_item in issues_report:
+                print(f"  - ID: {issue_item['id']}, Severity: {issue_item['severity']}, Issue: {issue_item['issue']}")
 
         self.set_status("Idle")
-        return issues
+        return issues_report
 
 class CodexSentinel(BaseAgent):
     """
@@ -176,21 +212,54 @@ class VeritasProof(BaseAgent):
     def __init__(self, app_context=None):
         super().__init__(agent_name="VeritasProof", app_context=app_context)
 
-    def generate_qr_proof(self, document_hash: str, timestamp: str, clause_id_map: dict, source_url: str = None):
+    def generate_qr_for_text(self, text_data: str) -> QPixmap | None:
+        """
+        Generates a QR code for the given text_data and returns it as a QPixmap.
+        Returns None if generation fails.
+        """
+        self.set_status(f"Generating QR code for data: {text_data[:30]}...")
+        if not text_data:
+            self.log_error("No data provided for QR code generation.")
+            return None
+        try:
+            qr = qrcode.QRCode(
+                version=1,
+                error_correction=qrcode.constants.ERROR_CORRECT_L,
+                box_size=10, # Size of each box in the QR grid
+                border=4,    # Thickness of the border
+            )
+            qr.add_data(text_data)
+            qr.make(fit=True)
+
+            img = qr.make_image(fill_color="black", back_color="white")
+
+            # Convert PIL image to QPixmap
+            buffer = io.BytesIO()
+            img.save(buffer, "PNG")
+            buffer.seek(0)
+
+            q_image = QImage()
+            q_image.loadFromData(buffer.getvalue(), "PNG")
+            pixmap = QPixmap.fromImage(q_image)
+
+            self.set_status("Idle")
+            print(f"{self.agent_name}: QR code generated successfully for data: {text_data[:30]}...")
+            return pixmap
+        except Exception as e:
+            self.log_error(f"QR code generation failed: {e}")
+            return None
+
+    # generate_qr_proof can be a higher-level method that calls generate_qr_for_text
+    def generate_qr_proof(self, document_hash: str, timestamp: str, clause_id_map: dict, source_url: str = None) -> QPixmap | None:
         self.set_status("Generating QR proof chain.")
-        # Placeholder: Actual QR code generation and data embedding
-        # Would use a library like 'qrcode' and 'Pillow'
-        qr_data = {
-            "doc_hash": document_hash,
-            "timestamp": timestamp,
-            "clause_map": clause_id_map,
-            "source_url": source_url
-        }
-        print(f"{self.agent_name}: QR proof data prepared: {qr_data}. (Placeholder - no actual QR generated)")
-        # In a real scenario, this would return image data or path to an image.
-        qr_image_placeholder = f"qr_proof_{document_hash[:8]}.png"
-        self.set_status("Idle")
-        return qr_image_placeholder
+        # For now, let's just make a QR of a combined string of this data
+        # In future, this could be a structured format like JSON within the QR
+        proof_data_str = f"DocHash: {document_hash}\nTimestamp: {timestamp}\nClauses: {len(clause_id_map)}\nSource: {source_url or 'N/A'}"
+
+        # Limit length for QR code if necessary, or handle larger data appropriately
+        # For this example, we'll use the string as is.
+
+        return self.generate_qr_for_text(proof_data_str)
 
 
 class DriftGuard(BaseAgent):

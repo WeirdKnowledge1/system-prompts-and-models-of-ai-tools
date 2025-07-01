@@ -6,6 +6,7 @@ from PyQt6.QtCore import QUrl, QDir # For QDesktopServices and QDir path convers
 from PyQt6.QtGui import QDesktopServices # For opening URLs/local paths
 import os
 import shutil # For file copying
+import datetime # For timestamping in manifest
 
 # Placeholder for view modules - will be created in subsequent steps
 from .trust_view import TrustView
@@ -192,6 +193,22 @@ class MainWindow(QMainWindow):
 
             widget.setStyleSheet(combined_stylesheet)
 
+            # Show/Hide Jurisdiction Header Label based on settings
+            # This applies to document views that have this label
+            if isinstance(widget, (TrustView, CharterView, DepositView)):
+                show_headers = self.settings_view.get_setting("show_jurisdiction_headers")
+                if hasattr(widget, 'jurisdiction_header_label'): # Check if the view has the label
+                    widget.jurisdiction_header_label.setVisible(show_headers)
+                # If the view itself is the one with the jurisdiction_header_label, then:
+                # widget.jurisdiction_header_label.setVisible(show_headers)
+
+        elif widget: # For non-document tabs or if coloring is off and widget is not None
+             widget.setStyleSheet(default_stylesheet) # Apply default style
+             # Also hide jurisdiction header if it's a non-doc tab that might have had it visible from a previous doc tab
+             if hasattr(widget, 'jurisdiction_header_label'):
+                 widget.jurisdiction_header_label.setVisible(False)
+
+
     def _upload_files_to_vault(self):
         """Allows user to select files and copies them to the Codex Vault uploads directory."""
         upload_dir = os.path.join(CODEX_VAULT_DIR, "codex_vault_sources", "uploads")
@@ -248,6 +265,65 @@ class MainWindow(QMainWindow):
             final_message = "\n\n".join(message)
 
         QMessageBox.information(self, "Codex Vault Upload Report", final_message.strip())
+
+        self._update_vault_manifest(success_files, upload_dir)
+
+    def _update_vault_manifest(self, successfully_uploaded_filenames: list, upload_dir: str):
+        """
+        Creates or updates a manifest.json file in the codex_vault_sources directory
+        with details of uploaded files and basic parsing for .txt files.
+        """
+        manifest_path = os.path.join(CODEX_VAULT_DIR, "codex_vault_sources", "manifest.json")
+        manifest_data = {}
+        if os.path.exists(manifest_path):
+            try:
+                with open(manifest_path, 'r') as f:
+                    manifest_data = json.load(f)
+            except json.JSONDecodeError:
+                print(f"Warning: Could not parse existing manifest {manifest_path}. Starting fresh.")
+                manifest_data = {"files": {}} # Ensure "files" key exists
+
+        if "files" not in manifest_data: # Ensure the 'files' key exists
+            manifest_data["files"] = {}
+
+        for filename in successfully_uploaded_filenames:
+            file_path_in_vault = os.path.join(upload_dir, filename)
+            file_entry = {
+                "path": file_path_in_vault,
+                "upload_date": datetime.datetime.now().isoformat(),
+                "parsed_status": "not_attempted",
+                "extracted_segments_count": 0,
+                "extracted_segments": [] # Placeholder for actual segments later
+            }
+
+            if filename.lower().endswith(".txt"):
+                try:
+                    with open(file_path_in_vault, 'r', encoding='utf-8') as f_txt:
+                        content = f_txt.read()
+                    # Basic parsing: split by double newlines
+                    segments = [seg.strip() for seg in content.split("\n\n") if seg.strip()]
+                    file_entry["parsed_status"] = "basic_text_extraction"
+                    file_entry["extracted_segments_count"] = len(segments)
+                    # Storing full segments might make manifest large. For now, just count.
+                    # file_entry["extracted_segments"] = segments
+                    print(f"TXT file '{filename}': Found {len(segments)} potential segments.")
+                except Exception as e:
+                    print(f"Error parsing TXT file '{filename}': {e}")
+                    file_entry["parsed_status"] = f"error_parsing_txt: {e}"
+
+            elif filename.lower().endswith((".pdf", ".docx")):
+                file_entry["parsed_status"] = "parsing_not_implemented"
+                print(f"File '{filename}': Parsing for this file type not yet implemented.")
+
+            manifest_data["files"][filename] = file_entry # Use filename as key
+
+        try:
+            with open(manifest_path, 'w') as f:
+                json.dump(manifest_data, f, indent=4)
+            print(f"Codex Vault manifest updated: {manifest_path}")
+        except Exception as e:
+            print(f"Error writing Codex Vault manifest: {e}")
+
 
     def _open_codex_vault(self):
         """Opens the Codex Vault directory in the system's file explorer."""
