@@ -1,10 +1,11 @@
 import sys
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QTabWidget, QWidget,
-                             QVBoxLayout, QLabel, QStatusBar, QMenuBar, QMessageBox)
+                             QVBoxLayout, QLabel, QStatusBar, QMenuBar, QMessageBox, QFileDialog)
 from PyQt6.QtGui import QAction, QIcon
 from PyQt6.QtCore import QUrl, QDir # For QDesktopServices and QDir path conversion
 from PyQt6.QtGui import QDesktopServices # For opening URLs/local paths
 import os
+import shutil # For file copying
 
 # Placeholder for view modules - will be created in subsequent steps
 from .trust_view import TrustView
@@ -100,25 +101,153 @@ class MainWindow(QMainWindow):
         #     bg_color = COLOR_NATURAL_LAW
         #     text_color = "white"
 
-        if widget: # Apply to the main widget of the tab
-            stylesheet = f"QWidget {{ background-color: {bg_color}; color: {text_color}; }}"
+        if widget:
+            # Determine the object name of the view for specific targeting
+            # Ensure views have self.setObjectName("ViewName") in their __init__
+            # For now, we assume they might not, so we use a general QWidget for the base.
+            # view_object_name = widget.objectName() if widget.objectName() else "QWidget"
+            # Using widget.metaObject().className() might be more reliable if objectName isn't set.
 
-            # More specific styling to avoid issues with child widgets like QLineEdit
-            # This targets the view itself, and QLabels, QGroupBox directly.
-            # QLineEdit, QTextEdit, QListWidget etc. will need their own specific styling
-            # if we want their backgrounds to also change or ensure text readability.
-            # For now, this is a broad approach.
+            # Base style for the tab widget itself (the view container)
+            # This makes the direct background of the view the jurisdictional color.
+            base_view_style = f"QWidget {{ background-color: {bg_color}; }}"
 
-            # Let's try a more targeted approach for better readability:
-            # Style the view itself, and let child widgets inherit or be styled separately.
-            # The problem is QWidget stylesheet applies to children unless they override.
-            # For now, we'll keep it simple and refine if major readability issues persist across many controls.
+            # General text color for QLabels directly on the view background
+            # Also make their own backgrounds transparent so the view background shows.
+            label_style = f"QLabel {{ color: {text_color}; background-color: transparent; }}"
 
-            widget.setStyleSheet(stylesheet)
+            # Styles for input fields to ensure readability
+            input_fields_style = """
+                QLineEdit, QTextEdit, QComboBox, QListWidget {
+                    background-color: white;
+                    color: black;
+                    border: 1px solid #888888; /* Slightly darker border for inputs */
+                    padding: 3px;
+                }
+                QComboBox { /* Ensure combobox also has padding */
+                    padding: 3px;
+                }
+                QComboBox::drop-down {
+                    border-left: 1px solid #888888;
+                    /* image: url(path/to/your/dropdown-arrow.png); Optional custom arrow */
+                }
+                QListWidget::item:selected {
+                    background-color: #0078d7; /* Standard selection blue */
+                    color: white;
+                }
+            """
+            # Styles for buttons
+            button_style = f"""
+                QPushButton {{
+                    color: {"white" if bg_color == COLOR_EQUITY else "black"}; /* Text color based on background */
+                    background-color: {"#5050A0" if bg_color == COLOR_EQUITY else "#D0D0D0"}; /* Button color adapting to theme */
+                    border: 1px solid {"#7070C0" if bg_color == COLOR_EQUITY else "#A0A0A0"};
+                    padding: 5px 10px;
+                    min-height: 20px; /* Ensure buttons are not too small */
+                    border-radius: 3px;
+                }}
+                QPushButton:hover {{
+                    background-color: {"#6060B0" if bg_color == COLOR_EQUITY else "#E0E0E0"};
+                }}
+                QPushButton:pressed {{
+                    background-color: {"#404090" if bg_color == COLOR_EQUITY else "#C0C0C0"};
+                }}
+                QPushButton:disabled {{
+                    color: #707070;
+                    background-color: #B0B0B0;
+                    border-color: #909090;
+                }}
+            """
 
-            # Example of how to make QLineEdit readable on dark backgrounds:
-            # common_input_style = "QLineEdit, QTextEdit { background-color: white; color: black; }"
-            # widget.setStyleSheet(f"QWidget {{ background-color: {bg_color}; color: {text_color}; }} {common_input_style}")
+            # Styles for GroupBoxes
+            groupbox_style = f"""
+                QGroupBox {{
+                    color: {text_color}; /* Title text color */
+                    background-color: transparent;
+                    border: 1px solid {text_color if text_color == 'white' else '#AAAAAA'}; /* Brighter border for dark themes */
+                    border-radius: 4px;
+                    margin-top: 12px; /* make space for the title */
+                    padding: 10px 5px 5px 5px; /* top, right, bottom, left */
+                }}
+                QGroupBox::title {{
+                    subcontrol-origin: margin;
+                    subcontrol-position: top center; /* position at the top center */
+                    padding: 0 5px;
+                    background-color: {bg_color}; /* Match groupbox title background to tab background */
+                    color: {text_color};
+                    border-radius: 3px; /* Optional: rounded corners for title background */
+                }}
+            """
+
+            # Combine stylesheets
+            # The widget itself (the view) gets the base background.
+            # Then specific child widget types are styled.
+            combined_stylesheet = "\n".join([
+                base_view_style, # Applied to the main QWidget of the tab
+                label_style,
+                input_fields_style,
+                button_style,
+                groupbox_style
+            ])
+
+            widget.setStyleSheet(combined_stylesheet)
+
+    def _upload_files_to_vault(self):
+        """Allows user to select files and copies them to the Codex Vault uploads directory."""
+        upload_dir = os.path.join(CODEX_VAULT_DIR, "codex_vault_sources", "uploads")
+        # Ensure directory exists (it should due to _ensure_data_directories_exist)
+        # os.makedirs(upload_dir, exist_ok=True)
+
+        file_paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Select Document(s) to Upload to Codex Vault",
+            QDir.homePath(), # Start in user's home directory
+            "Documents (*.pdf *.docx *.txt);;All Files (*)"
+        )
+
+        if not file_paths:
+            return # User cancelled
+
+        success_files = []
+        error_files = []
+
+        for file_path in file_paths:
+            try:
+                file_name = os.path.basename(file_path)
+                destination_path = os.path.join(upload_dir, file_name)
+
+                if os.path.exists(destination_path):
+                    reply = QMessageBox.question(
+                        self, "File Exists",
+                        f"The file '{file_name}' already exists in the Codex Vault uploads.\nOverwrite it?",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
+                        QMessageBox.StandardButton.No
+                    )
+                    if reply == QMessageBox.StandardButton.Cancel:
+                        QMessageBox.information(self, "Upload Cancelled", "File upload operation cancelled by user.")
+                        return # Cancel entire operation
+                    elif reply == QMessageBox.StandardButton.No:
+                        error_files.append(f"{file_name} (skipped, not overwritten)")
+                        continue # Skip this file
+                    # If Yes, proceed to overwrite
+
+                shutil.copy2(file_path, destination_path) # copy2 preserves metadata
+                success_files.append(file_name)
+            except Exception as e:
+                error_files.append(f"{os.path.basename(file_path)} (Error: {e})")
+
+        message = []
+        if success_files:
+            message.append(f"Successfully uploaded:\n- " + "\n- ".join(success_files))
+        if error_files:
+            message.append(f"Errors/Skipped:\n- " + "\n- ".join(error_files))
+
+        if not message:
+             final_message = "No files were selected or processed."
+        else:
+            final_message = "\n\n".join(message)
+
+        QMessageBox.information(self, "Codex Vault Upload Report", final_message.strip())
 
     def _open_codex_vault(self):
         """Opens the Codex Vault directory in the system's file explorer."""
@@ -158,6 +287,10 @@ class MainWindow(QMainWindow):
         view_vault_action = QAction("&View Codex Vault", self)
         view_vault_action.triggered.connect(self._open_codex_vault)
         file_menu.addAction(view_vault_action)
+
+        upload_to_vault_action = QAction("&Upload Document(s) to Codex Vault...", self)
+        upload_to_vault_action.triggered.connect(self._upload_files_to_vault)
+        file_menu.addAction(upload_to_vault_action)
 
         file_menu.addSeparator() #---------------------------------------------
 

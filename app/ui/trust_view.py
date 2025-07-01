@@ -4,8 +4,12 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QGridLayout, QLabel, QLineEdi
 from PyQt6.QtCore import Qt
 import json
 import os
+import datetime # Import datetime
 
 from app.core.document_models import MichaudFamilyTrust
+from app.core.clause_model import Clause
+from app.ui.dialogs.edit_clause_dialog import EditClauseDialog
+from app.core.agents import ClauseConformer # Import ClauseConformer
 from app.utils.constants import CODEX_VAULT_DIR
 
 class TrustView(QWidget):
@@ -121,32 +125,69 @@ class TrustView(QWidget):
 
         self.sel_clause_text_label = QLabel("Text:")
         self.sel_clause_text_value = QTextEdit()
-        self.sel_clause_text_value.setReadOnly(True) # Display only for now
-        selected_clause_layout.addWidget(self.sel_clause_text_label, 3, 0, 1, 2) # Span 2 columns
-        selected_clause_layout.addWidget(self.sel_clause_text_value, 4, 0, 1, 2)
+        self.sel_clause_text_value.setReadOnly(True)
+        selected_clause_layout.addWidget(self.sel_clause_text_label, 3, 0)
+        selected_clause_layout.addWidget(self.sel_clause_text_value, 4, 0, 1, 2) # Span 2 columns for text area
 
+        self.sel_clause_purpose_label = QLabel("Purpose/Type:")
+        self.sel_clause_purpose_value = QLabel("")
+        selected_clause_layout.addWidget(self.sel_clause_purpose_label, 5, 0)
+        selected_clause_layout.addWidget(self.sel_clause_purpose_value, 5, 1)
+
+        self.sel_clause_created_label = QLabel("Created:")
+        self.sel_clause_created_value = QLabel("")
+        selected_clause_layout.addWidget(self.sel_clause_created_label, 6, 0)
+        selected_clause_layout.addWidget(self.sel_clause_created_value, 6, 1)
+
+        self.sel_clause_modified_label = QLabel("Modified:")
+        self.sel_clause_modified_value = QLabel("")
+        selected_clause_layout.addWidget(self.sel_clause_modified_label, 7, 0)
+        selected_clause_layout.addWidget(self.sel_clause_modified_value, 7, 1)
+
+        self.sel_clause_version_label = QLabel("Version:")
+        self.sel_clause_version_value = QLabel("")
+        selected_clause_layout.addWidget(self.sel_clause_version_label, 8, 0)
+        selected_clause_layout.addWidget(self.sel_clause_version_value, 8, 1)
+
+        buttons_sel_clause_layout = QHBoxLayout()
         self.edit_selected_clause_button = QPushButton("Edit Selected Clause")
-        self.edit_selected_clause_button.setEnabled(False) # Initially disabled
-        self.edit_selected_clause_button.clicked.connect(self.edit_selected_clause) # Placeholder
-        selected_clause_layout.addWidget(self.edit_selected_clause_button, 5, 0, 1, 2)
+        self.edit_selected_clause_button.setEnabled(False)
+        self.edit_selected_clause_button.clicked.connect(self.edit_selected_clause)
+
+        self.view_audit_button = QPushButton("View Audit Trail")
+        self.view_audit_button.setEnabled(False) # Placeholder
+        self.view_audit_button.setToolTip("Functionality to be implemented in a future phase.")
+        # self.view_audit_button.clicked.connect(self.view_clause_audit_trail) # Placeholder
+
+        buttons_sel_clause_layout.addWidget(self.edit_selected_clause_button)
+        buttons_sel_clause_layout.addWidget(self.view_audit_button)
+        selected_clause_layout.addLayout(buttons_sel_clause_layout, 9, 0, 1, 2) # Add button layout
 
         self.selected_clause_details_group.setLayout(selected_clause_layout)
-        self.selected_clause_details_group.setVisible(False) # Hide until a clause is selected
+        self.selected_clause_details_group.setVisible(False)
         clauses_layout.addWidget(self.selected_clause_details_group)
 
         # --- Clause Action Buttons ---
         clause_action_buttons_layout = QHBoxLayout()
         self.add_clause_button = QPushButton("Add New Clause")
         self.add_clause_button.clicked.connect(self.add_clause)
-        # self.edit_clause_button = QPushButton("Edit Clause") # Replaced by edit_selected_clause_button
-        # self.edit_clause_button.setEnabled(False)
+
         self.remove_clause_button = QPushButton("Remove Selected Clause")
         self.remove_clause_button.setEnabled(False) # Initially disabled
-        self.remove_clause_button.clicked.connect(self.remove_selected_clause) # Placeholder
+        self.remove_clause_button.clicked.connect(self.remove_selected_clause)
+
+        self.move_clause_up_button = QPushButton("Move Up")
+        self.move_clause_up_button.setEnabled(False)
+        self.move_clause_up_button.clicked.connect(self.move_clause_up)
+
+        self.move_clause_down_button = QPushButton("Move Down")
+        self.move_clause_down_button.setEnabled(False)
+        self.move_clause_down_button.clicked.connect(self.move_clause_down)
 
         clause_action_buttons_layout.addWidget(self.add_clause_button)
-        # clause_action_buttons_layout.addWidget(self.edit_clause_button)
         clause_action_buttons_layout.addWidget(self.remove_clause_button)
+        clause_action_buttons_layout.addWidget(self.move_clause_up_button)
+        clause_action_buttons_layout.addWidget(self.move_clause_down_button)
         clauses_layout.addLayout(clause_action_buttons_layout)
 
         clauses_group.setLayout(clauses_layout)
@@ -165,6 +206,11 @@ class TrustView(QWidget):
         file_ops_layout.addWidget(self.save_button)
         file_ops_layout.addWidget(self.load_button)
         main_layout.addLayout(file_ops_layout)
+
+        # --- Conformance Check Button ---
+        self.conformance_check_button = QPushButton("Run Basic Conformance Check")
+        self.conformance_check_button.clicked.connect(self.run_basic_conformance_check)
+        main_layout.addWidget(self.conformance_check_button, alignment=Qt.AlignmentFlag.AlignLeft) # Align to left or center
 
         main_layout.addStretch() # Add stretch to push content to the top
 
@@ -215,8 +261,16 @@ class TrustView(QWidget):
             jurisdiction=self.document.jurisdiction, # Default to doc's jurisdiction
             origin="User Input via Basic Add"
         )
-        self.clauses_list_widget.addItem(str(new_clause))
-        QMessageBox.information(self, "Clause Added", f"Clause '{new_clause.id}' added.")
+        # self.clauses_list_widget.addItem(str(new_clause)) # Dialog handles UI update after success
+        # QMessageBox.information(self, "Clause Added", f"Clause '{new_clause.id}' added.")
+        dialog = EditClauseDialog(default_jurisdiction=self.document.jurisdiction, parent=self)
+        if dialog.exec():
+            new_clause = dialog.get_clause()
+            self.document.clauses.append(new_clause) # Add to model
+            self.clauses_list_widget.addItem(str(new_clause)) # Add to UI list
+            self.clauses_list_widget.setCurrentRow(self.clauses_list_widget.count() - 1) # Select the new item
+            QMessageBox.information(self, "Clause Added", f"Clause '{new_clause.id}' successfully added.")
+            # Potentially update document's last_modified_date and version here or in document model
 
     def display_selected_clause_details(self):
         selected_items = self.clauses_list_widget.selectedItems()
@@ -232,19 +286,41 @@ class TrustView(QWidget):
                 self.sel_clause_jurisdiction_value.setText(clause_obj.jurisdiction)
                 self.sel_clause_origin_value.setText(clause_obj.origin)
                 self.sel_clause_text_value.setPlainText(clause_obj.text)
+                self.sel_clause_purpose_value.setText(clause_obj.metadata.get("purpose_type", "N/A"))
+
+                # Format dates for display (optional, could also show ISO string)
+                try:
+                    created_date = datetime.datetime.fromisoformat(clause_obj.creation_date).strftime('%Y-%m-%d %H:%M:%S')
+                except ValueError:
+                    created_date = clause_obj.creation_date # Show as is if not parsable
+                self.sel_clause_created_value.setText(created_date)
+
+                try:
+                    modified_date = datetime.datetime.fromisoformat(clause_obj.last_modified_date).strftime('%Y-%m-%d %H:%M:%S')
+                except ValueError:
+                    modified_date = clause_obj.last_modified_date
+                self.sel_clause_modified_value.setText(modified_date)
+
+                self.sel_clause_version_value.setText(str(clause_obj.version))
 
                 self.selected_clause_details_group.setVisible(True)
                 self.edit_selected_clause_button.setEnabled(True)
-                self.remove_clause_button.setEnabled(True) # Enable remove button when clause is selected
+                self.remove_clause_button.setEnabled(True)
+                self.move_clause_up_button.setEnabled(current_row > 0)
+                self.move_clause_down_button.setEnabled(current_row < self.clauses_list_widget.count() - 1)
             else:
                 # Should not happen if selection is valid and lists are in sync
                 self.selected_clause_details_group.setVisible(False)
                 self.edit_selected_clause_button.setEnabled(False)
                 self.remove_clause_button.setEnabled(False)
+                self.move_clause_up_button.setEnabled(False)
+                self.move_clause_down_button.setEnabled(False)
         else:
             self.selected_clause_details_group.setVisible(False)
             self.edit_selected_clause_button.setEnabled(False)
             self.remove_clause_button.setEnabled(False)
+            self.move_clause_up_button.setEnabled(False)
+            self.move_clause_down_button.setEnabled(False)
 
     def edit_selected_clause(self):
         # Placeholder for editing functionality
@@ -252,13 +328,17 @@ class TrustView(QWidget):
         # For now, just show a message.
         current_row = self.clauses_list_widget.currentRow()
         if current_row >= 0:
-            clause_obj = self.document.clauses[current_row]
-            QMessageBox.information(self, "Edit Clause", f"Editing clause: {clause_obj.id} (Placeholder - functionality to be implemented).")
-            # Example: Open a dialog here
-            # dialog = EditClauseDialog(clause_obj, self)
-            # if dialog.exec():
-            #    self.document.clauses[current_row] = dialog.get_updated_clause()
-            #    self.load_document_data_into_ui() # Refresh the list and details
+            clause_to_edit = self.document.clauses[current_row]
+
+            dialog = EditClauseDialog(clause=clause_to_edit, parent=self)
+            if dialog.exec():
+                updated_clause = dialog.get_clause()
+                self.document.clauses[current_row] = updated_clause # Update in model
+                self.clauses_list_widget.item(current_row).setText(str(updated_clause)) # Update in UI list
+                self.display_selected_clause_details() # Refresh details panel
+                QMessageBox.information(self, "Clause Updated", f"Clause '{updated_clause.id}' successfully updated.")
+                # Potentially update document's last_modified_date and version
+            # else: User cancelled
         else:
             QMessageBox.warning(self, "Edit Clause", "No clause selected to edit.")
 
@@ -368,3 +448,44 @@ if __name__ == '__main__':
     trust_view.setGeometry(100,100, 800, 600)
     trust_view.show()
     sys.exit(app.exec())
+
+    def run_basic_conformance_check(self):
+        """Runs the basic conformance check using ClauseConformer agent."""
+        self._collect_data_from_ui() # Ensure document is up-to-date
+
+        conformer = ClauseConformer() # In a real app, context might be passed
+        issues = conformer.check_document_for_basic_issues(self.document)
+
+        if issues:
+            report_message = "Basic Conformance Check Found Issues:\n\n" + "\n".join(f"- {issue}" for issue in issues)
+            QMessageBox.warning(self, "Conformance Issues", report_message)
+        else:
+            QMessageBox.information(self, "Conformance Check", "No basic conformance issues found.")
+
+    def move_clause_up(self):
+        current_row = self.clauses_list_widget.currentRow()
+        if current_row > 0: # Can move up if not the first item
+            # Swap in the model
+            clause_to_move = self.document.clauses.pop(current_row)
+            self.document.clauses.insert(current_row - 1, clause_to_move)
+
+            # Update UI list (remove and re-insert)
+            # No need to change item text, just its position
+            item = self.clauses_list_widget.takeItem(current_row)
+            self.clauses_list_widget.insertItem(current_row - 1, item)
+            self.clauses_list_widget.setCurrentRow(current_row - 1) # Keep selection on moved item
+            # itemSelectionChanged will call display_selected_clause_details and update button states
+
+    def move_clause_down(self):
+        current_row = self.clauses_list_widget.currentRow()
+        # Check if current_row is valid and not the last item
+        if 0 <= current_row < self.clauses_list_widget.count() - 1:
+            # Swap in the model
+            clause_to_move = self.document.clauses.pop(current_row)
+            self.document.clauses.insert(current_row + 1, clause_to_move)
+
+            # Update UI list
+            item = self.clauses_list_widget.takeItem(current_row)
+            self.clauses_list_widget.insertItem(current_row + 1, item)
+            self.clauses_list_widget.setCurrentRow(current_row + 1)
+            # itemSelectionChanged will call display_selected_clause_details

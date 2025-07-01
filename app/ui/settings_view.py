@@ -20,10 +20,12 @@ class SettingsView(QWidget):
             "zip_module_loader_enabled": False,
             "legal_embossed_seal_enabled": False,
             "qr_proof_chain_embeds_enabled": False,
-            "offline_mode_autonomous_ai_enabled": False, # From full list
-            "natural_law_final_jurisdiction_enabled": False, # From full list
-            "enforce_clauseconformer_all_docs": True, # From full list
-            "jurisdictional_colors_enabled": True, # Part IV.B
+            "offline_mode_autonomous_ai_enabled": False,
+            "natural_law_final_jurisdiction_enabled": False,
+            "enforce_clauseconformer_all_docs": True,
+            "jurisdictional_colors_enabled": True,
+            "permit_live_clause_editing": False, # New
+            "show_jurisdiction_headers": True,   # New
             # Add other settings from the full list in Part II.A.1 with defaults
         }
 
@@ -131,6 +133,46 @@ class SettingsView(QWidget):
         )
         primary_toggles_grid.addWidget(self.jurisdictional_colors_checkbox, 5, 0)
         primary_toggles_grid.addWidget(QLabel("Applies color schemes to document views based on their governing law."), 5, 1)
+
+        # 6. Enable Natural Law Enforcement as Final Jurisdiction
+        self.natural_law_final_checkbox = QCheckBox("Enable Natural Law Enforcement as Final Jurisdiction")
+        self.natural_law_final_checkbox.setToolTip("Prioritizes Natural Law principles in conflict resolution and final document authority.")
+        self.natural_law_final_checkbox.setChecked(self.settings.get("natural_law_final_jurisdiction_enabled", False))
+        self.natural_law_final_checkbox.stateChanged.connect(
+            lambda state: self.settings.update({"natural_law_final_jurisdiction_enabled": state == Qt.CheckState.Checked.value})
+        )
+        primary_toggles_grid.addWidget(self.natural_law_final_checkbox, 6, 0)
+        primary_toggles_grid.addWidget(QLabel("Ensures Natural Law is the ultimate authority in document logic. (Placeholder)"), 6, 1)
+
+        # 7. Enforce ClauseConformer Across All Document Types
+        self.enforce_conformer_checkbox = QCheckBox("Enforce ClauseConformer Across All Document Types")
+        self.enforce_conformer_checkbox.setToolTip("Automatically runs ClauseConformer checks during document operations.")
+        self.enforce_conformer_checkbox.setChecked(self.settings.get("enforce_clauseconformer_all_docs", True))
+        self.enforce_conformer_checkbox.stateChanged.connect(
+            lambda state: self.settings.update({"enforce_clauseconformer_all_docs": state == Qt.CheckState.Checked.value})
+        )
+        primary_toggles_grid.addWidget(self.enforce_conformer_checkbox, 7, 0)
+        primary_toggles_grid.addWidget(QLabel("Activates automatic conformance checks by ClauseConformer agent. (Placeholder)"), 7, 1)
+
+        # 8. Permit Live Clause Editing from Document Viewer
+        self.live_clause_editing_checkbox = QCheckBox("Permit Live Clause Editing from Document Viewer")
+        self.live_clause_editing_checkbox.setToolTip("Allows direct editing of clause text within the main document view, rather than only via dialog.")
+        self.live_clause_editing_checkbox.setChecked(self.settings.get("permit_live_clause_editing", False))
+        self.live_clause_editing_checkbox.stateChanged.connect(
+            lambda state: self.settings.update({"permit_live_clause_editing": state == Qt.CheckState.Checked.value})
+        )
+        primary_toggles_grid.addWidget(self.live_clause_editing_checkbox, 8, 0)
+        primary_toggles_grid.addWidget(QLabel("Enables in-place editing of clauses in the list. (Placeholder)"), 8, 1)
+
+        # 9. Show/Hide Document Jurisdiction Headers
+        self.show_jurisdiction_headers_checkbox = QCheckBox("Show Document Jurisdiction Headers")
+        self.show_jurisdiction_headers_checkbox.setToolTip("Toggles the visibility of jurisdiction headers within document views.")
+        self.show_jurisdiction_headers_checkbox.setChecked(self.settings.get("show_jurisdiction_headers", True))
+        self.show_jurisdiction_headers_checkbox.stateChanged.connect(
+            lambda state: self.settings.update({"show_jurisdiction_headers": state == Qt.CheckState.Checked.value})
+        )
+        primary_toggles_grid.addWidget(self.show_jurisdiction_headers_checkbox, 9, 0)
+        primary_toggles_grid.addWidget(QLabel("Controls visibility of jurisdictional headers in documents. (Placeholder UI effect)"), 9, 1)
 
         primary_toggles_group.setLayout(primary_toggles_grid)
         settings_layout.addWidget(primary_toggles_group)

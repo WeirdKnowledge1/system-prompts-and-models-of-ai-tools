@@ -79,6 +79,70 @@ class ClauseConformer(BaseAgent):
         self.set_status("Idle")
         return harmonization_report
 
+    def check_document_for_basic_issues(self, document_obj) -> list[str]:
+        """
+        Performs basic conceptual checks on a single document object.
+        Returns a list of issue strings.
+        """
+        if not document_obj:
+            return ["No document provided for conformance check."]
+
+        self.set_status(f"Running basic conformance check on: {document_obj.name} ({document_obj.doc_type})")
+        issues = []
+
+        # Placeholder check 1: Empty clause text
+        for i, clause in enumerate(document_obj.clauses):
+            if not clause.text.strip():
+                issues.append(f"Clause {i+1} (ID: {clause.id}) has empty text.")
+
+        # Placeholder check 2: Basic jurisdictional mix
+        # These are typical/expected primary jurisdictions.
+        expected_jurisdictions = {
+            "Michaud Family Trust": "Lex Aequies",
+            "Michaud Special Deposit Document": "Lex Aequies", # Can also have Postal elements, but primary is Aequies
+            "Michaud Family Postal Charter": "Lex Postalis"
+        }
+
+        doc_primary_jurisdiction = document_obj.jurisdiction # The document's own declared jurisdiction
+        doc_expected_primary = expected_jurisdictions.get(document_obj.doc_type)
+
+        if doc_expected_primary and doc_primary_jurisdiction != doc_expected_primary:
+            issues.append(
+                f"Document's declared jurisdiction ('{doc_primary_jurisdiction}') "
+                f"differs from typical primary for its type ('{doc_expected_primary}')."
+            )
+
+        for i, clause in enumerate(document_obj.clauses):
+            if document_obj.doc_type == "Michaud Family Trust" or document_obj.doc_type == "Michaud Special Deposit Document":
+                if clause.jurisdiction == "Lex Postalis":
+                    issues.append(
+                        f"Clause {i+1} (ID: {clause.id}) in a '{document_obj.doc_type}' "
+                        f"has 'Lex Postalis' jurisdiction. Review for intended use."
+                    )
+            elif document_obj.doc_type == "Michaud Family Postal Charter":
+                if clause.jurisdiction == "Lex Aequies":
+                    issues.append(
+                        f"Clause {i+1} (ID: {clause.id}) in a 'Michaud Family Postal Charter' "
+                        f"has 'Lex Aequies' jurisdiction. Review for intended use."
+                    )
+            # Could add checks for "Lex Naturalis" being present or if other unexpected jurisdictions appear.
+            if clause.jurisdiction not in ["Lex Aequies", "Lex Postalis", "Lex Naturalis", document_obj.jurisdiction]:
+                issues.append(
+                    f"Clause {i+1} (ID: {clause.id}) has an unusual jurisdiction ('{clause.jurisdiction}') "
+                    f"for this document type or its declared jurisdiction. Requires review."
+                )
+
+
+        if not issues:
+            print(f"{self.agent_name}: No basic issues found in {document_obj.name}.")
+        else:
+            print(f"{self.agent_name}: Found {len(issues)} basic issue(s) in {document_obj.name}.")
+            for issue in issues:
+                print(f"  - {issue}")
+
+        self.set_status("Idle")
+        return issues
+
 class CodexSentinel(BaseAgent):
     """
     Meta-auditor. Red-teams system logic, detects drift, and forces healing.
