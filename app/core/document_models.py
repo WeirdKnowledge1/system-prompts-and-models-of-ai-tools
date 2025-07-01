@@ -204,7 +204,9 @@ class MichaudFamilyPostalCharter(BaseDocument):
         self.usps_format_compliance_details = ""
         self.vienna_convention_reference_details = ""
         self.postal_treaty_law_reference_details = ""
-        self.family_trust_ref = None # Reference to the Family Trust
+        self.family_trust_ref = None
+        self.upu_tracking_number: str | None = None
+        self.jurisdictional_delivery_tag: str | None = None
 
     def to_dict(self):
         data = super().to_dict()
@@ -216,6 +218,8 @@ class MichaudFamilyPostalCharter(BaseDocument):
             "vienna_convention_reference_details": self.vienna_convention_reference_details,
             "postal_treaty_law_reference_details": self.postal_treaty_law_reference_details,
             "family_trust_ref": self.family_trust_ref,
+            "upu_tracking_number": self.upu_tracking_number,
+            "jurisdictional_delivery_tag": self.jurisdictional_delivery_tag,
         })
         return data
 
@@ -231,6 +235,8 @@ class MichaudFamilyPostalCharter(BaseDocument):
         doc.vienna_convention_reference_details = data.get("vienna_convention_reference_details", "")
         doc.postal_treaty_law_reference_details = data.get("postal_treaty_law_reference_details", "")
         doc.family_trust_ref = data.get("family_trust_ref")
+            doc.upu_tracking_number = data.get("upu_tracking_number")
+            doc.jurisdictional_delivery_tag = data.get("jurisdictional_delivery_tag")
         return doc
 
 class MichaudSpecialDepositDocument(BaseDocument):
@@ -255,6 +261,9 @@ class MichaudSpecialDepositDocument(BaseDocument):
         self.foreign_trustee_act_citation = ""
         self.subrogate_practice_act_citation = ""
         self.manitoba_statutes_special_deposit_citation = ""
+        self.upu_tracking_number: str | None = None
+        self.jurisdictional_delivery_tag: str | None = None
+
 
     def to_dict(self):
         data = super().to_dict()
@@ -269,6 +278,8 @@ class MichaudSpecialDepositDocument(BaseDocument):
             "foreign_trustee_act_citation": self.foreign_trustee_act_citation,
             "subrogate_practice_act_citation": self.subrogate_practice_act_citation,
             "manitoba_statutes_special_deposit_citation": self.manitoba_statutes_special_deposit_citation,
+            "upu_tracking_number": self.upu_tracking_number,
+            "jurisdictional_delivery_tag": self.jurisdictional_delivery_tag,
         })
         return data
 
@@ -287,6 +298,8 @@ class MichaudSpecialDepositDocument(BaseDocument):
         doc.foreign_trustee_act_citation = data.get("foreign_trustee_act_citation", "")
         doc.subrogate_practice_act_citation = data.get("subrogate_practice_act_citation", "")
         doc.manitoba_statutes_special_deposit_citation = data.get("manitoba_statutes_special_deposit_citation", "")
+        doc.upu_tracking_number = data.get("upu_tracking_number")
+        doc.jurisdictional_delivery_tag = data.get("jurisdictional_delivery_tag")
         return doc
 
 # Example Usage (for testing, not part of the final app logic here)

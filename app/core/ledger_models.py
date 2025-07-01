@@ -5,15 +5,17 @@ class LedgerEntry:
     """Represents a single entry in a document's ledger."""
     def __init__(self, title: str, entry_type: str, jurisdiction_tag: str,
                  notes: str = "", associated_clause_ids: list[str] = None,
-                 status: str = "Active", entry_id: str = None, timestamp: str = None):
+                 status: str = "Active", entry_id: str = None, timestamp: str = None,
+                 category_tags: list[str] = None): # Added category_tags
         self.entry_id = entry_id if entry_id else f"LENT-{uuid.uuid4().hex[:8].upper()}"
-        self.timestamp = timestamp if timestamp else datetime.datetime.now().isoformat()
+        self.timestamp = timestamp if timestamp else datetime.datetime.now().isoformat() # User can override via dialog
         self.title = title
-        self.entry_type = entry_type # E.g., "Transaction", "Notice", "Filing", "Clause Reference"
-        self.jurisdiction_tag = jurisdiction_tag # E.g., "Lex Aequies", "Lex Postalis"
+        self.entry_type = entry_type
+        self.jurisdiction_tag = jurisdiction_tag
         self.notes = notes
         self.associated_clause_ids = associated_clause_ids if associated_clause_ids is not None else []
-        self.status = status # E.g., "Active", "Archived", "Under Review"
+        self.status = status
+        self.category_tags = category_tags if category_tags is not None else [] # Initialize category_tags
 
     def to_dict(self) -> dict:
         return {
@@ -25,6 +27,7 @@ class LedgerEntry:
             "notes": self.notes,
             "associated_clause_ids": self.associated_clause_ids,
             "status": self.status,
+            "category_tags": self.category_tags, # Added category_tags
         }
 
     @classmethod
@@ -36,8 +39,9 @@ class LedgerEntry:
             notes=data.get("notes", ""),
             associated_clause_ids=data.get("associated_clause_ids", []),
             status=data.get("status", "Active"),
-            entry_id=data.get("entry_id"), # Let constructor generate if None
-            timestamp=data.get("timestamp") # Let constructor generate if None
+            entry_id=data.get("entry_id"),
+            timestamp=data.get("timestamp"),
+            category_tags=data.get("category_tags", []) # Added category_tags
         )
 
     def __str__(self):

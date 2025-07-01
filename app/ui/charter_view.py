@@ -91,6 +91,21 @@ class CharterView(QWidget):
         self.family_trust_ref_input = QLineEdit()
         charter_details_layout.addWidget(self.family_trust_ref_label)
         charter_details_layout.addWidget(self.family_trust_ref_input)
+
+        # UPU Tracking Fields
+        self.upu_tracking_number_label = QLabel("UPU Tracking Number:")
+        self.upu_tracking_number_input = QLineEdit()
+        self.upu_tracking_number_input.setPlaceholderText("Enter UPU tracking number if applicable")
+        self.upu_tracking_number_input.textChanged.connect(self._update_jurisdictional_delivery_tag)
+        charter_details_layout.addWidget(self.upu_tracking_number_label)
+        charter_details_layout.addWidget(self.upu_tracking_number_input)
+
+        self.jurisdictional_delivery_tag_label = QLabel("Jurisdictional Delivery Tag:")
+        self.jurisdictional_delivery_tag_display = QLabel("N/A") # Read-only display
+        self.jurisdictional_delivery_tag_display.setStyleSheet("font-style: italic; color: #555;") # Basic styling
+        charter_details_layout.addWidget(self.jurisdictional_delivery_tag_label)
+        charter_details_layout.addWidget(self.jurisdictional_delivery_tag_display)
+
         charter_details_group.setLayout(charter_details_layout)
         main_layout.addWidget(charter_details_group)
         clauses_group = QGroupBox("Clauses")
@@ -201,6 +216,39 @@ class CharterView(QWidget):
         self.document.vienna_convention_reference_details = self.vienna_ref_input.toPlainText()
         self.document.postal_treaty_law_reference_details = self.postal_treaty_input.toPlainText()
         self.document.family_trust_ref = self.family_trust_ref_input.text()
+        self.document.upu_tracking_number = self.upu_tracking_number_input.text().strip()
+        # jurisdictional_delivery_tag is auto-generated, so no need to collect from UI, but ensure it's in model
+        if self.document.upu_tracking_number: # Re-generate if UPU number exists
+            self._generate_and_set_delivery_tag()
+        else:
+            self.document.jurisdictional_delivery_tag = None
+
+
+    def _generate_and_set_delivery_tag(self):
+        """Generates and sets the jurisdictional delivery tag based on UPU number."""
+        if self.document.upu_tracking_number:
+            # Simplified generation: LEXPOST-CA-MB-UPU-[YEAR]-[LAST4OFUPU_OR_001]
+            # A more robust sequence would require persistent state.
+            year = datetime.datetime.now().year
+            sequence = self.document.upu_tracking_number[-4:] if len(self.document.upu_tracking_number) >= 4 else "001"
+            # Assuming jurisdiction might provide more parts like "CA-MB"
+            # For now, using fixed placeholders.
+            # TODO: Get CA-MB or similar from document context or settings.
+            prefix = "LEXPOST-CA-MB-UPU"
+            self.document.jurisdictional_delivery_tag = f"{prefix}-{year}-{sequence}"
+        else:
+            self.document.jurisdictional_delivery_tag = None
+
+        self.jurisdictional_delivery_tag_display.setText(self.document.jurisdictional_delivery_tag or "N/A")
+        self._mark_as_modified()
+
+
+    def _update_jurisdictional_delivery_tag(self):
+        """Connected to upu_tracking_number_input.textChanged signal."""
+        self.document.upu_tracking_number = self.upu_tracking_number_input.text().strip()
+        self._generate_and_set_delivery_tag()
+        # This also implicitly calls self._mark_as_modified() via _generate_and_set_delivery_tag
+
 
     def load_document_data_into_ui(self):
         self.name_input.setText(self.document.name)
@@ -214,6 +262,8 @@ class CharterView(QWidget):
         self.vienna_ref_input.setPlainText(self.document.vienna_convention_reference_details)
         self.postal_treaty_input.setPlainText(self.document.postal_treaty_law_reference_details)
         self.family_trust_ref_input.setText(self.document.family_trust_ref or "")
+        self.upu_tracking_number_input.setText(self.document.upu_tracking_number or "")
+        self.jurisdictional_delivery_tag_display.setText(self.document.jurisdictional_delivery_tag or "N/A")
         self.clauses_list_widget.clear()
         for clause_obj in self.document.clauses:
             self.clauses_list_widget.addItem(str(clause_obj))

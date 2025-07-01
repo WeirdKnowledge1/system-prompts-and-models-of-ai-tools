@@ -125,6 +125,21 @@ class DepositView(QWidget):
         self.manitoba_statutes_input = QLineEdit()
         deposit_specifics_layout.addWidget(self.manitoba_statutes_label)
         deposit_specifics_layout.addWidget(self.manitoba_statutes_input)
+
+        # UPU Tracking Fields
+        self.upu_tracking_number_label = QLabel("UPU Tracking Number (Optional):")
+        self.upu_tracking_number_input = QLineEdit()
+        self.upu_tracking_number_input.setPlaceholderText("Enter UPU tracking number if applicable")
+        self.upu_tracking_number_input.textChanged.connect(self._update_jurisdictional_delivery_tag)
+        deposit_specifics_layout.addWidget(self.upu_tracking_number_label)
+        deposit_specifics_layout.addWidget(self.upu_tracking_number_input)
+
+        self.jurisdictional_delivery_tag_label = QLabel("Jurisdictional Delivery Tag:")
+        self.jurisdictional_delivery_tag_display = QLabel("N/A") # Read-only display
+        self.jurisdictional_delivery_tag_display.setStyleSheet("font-style: italic; color: #555;")
+        deposit_specifics_layout.addWidget(self.jurisdictional_delivery_tag_label)
+        deposit_specifics_layout.addWidget(self.jurisdictional_delivery_tag_display)
+
         deposit_specifics_group.setLayout(deposit_specifics_layout)
         main_layout.addWidget(deposit_specifics_group)
 
@@ -238,6 +253,29 @@ class DepositView(QWidget):
         self.document.foreign_trustee_act_citation = self.foreign_trustee_act_input.text()
         self.document.subrogate_practice_act_citation = self.subrogate_practice_act_input.text()
         self.document.manitoba_statutes_special_deposit_citation = self.manitoba_statutes_input.text()
+        self.document.upu_tracking_number = self.upu_tracking_number_input.text().strip()
+        if self.document.upu_tracking_number:
+            self._generate_and_set_delivery_tag() # Ensure tag is in model
+        else:
+            self.document.jurisdictional_delivery_tag = None
+
+
+    def _generate_and_set_delivery_tag(self):
+        if self.document.upu_tracking_number:
+            year = datetime.datetime.now().year
+            # Using fixed "DEP" for deposit type, and placeholder for geo/sequence
+            sequence = self.document.upu_tracking_number[-4:] if len(self.document.upu_tracking_number) >= 4 else "001"
+            prefix = "LEXPOST-CA-MB-UPU-DEP" # Added -DEP for specificity
+            self.document.jurisdictional_delivery_tag = f"{prefix}-{year}-{sequence}"
+        else:
+            self.document.jurisdictional_delivery_tag = None
+        self.jurisdictional_delivery_tag_display.setText(self.document.jurisdictional_delivery_tag or "N/A")
+        self._mark_as_modified()
+
+    def _update_jurisdictional_delivery_tag(self):
+        self.document.upu_tracking_number = self.upu_tracking_number_input.text().strip()
+        self._generate_and_set_delivery_tag()
+
 
     def load_document_data_into_ui(self):
         self.name_input.setText(self.document.name)
@@ -259,6 +297,8 @@ class DepositView(QWidget):
         self.foreign_trustee_act_input.setText(self.document.foreign_trustee_act_citation)
         self.subrogate_practice_act_input.setText(self.document.subrogate_practice_act_citation)
         self.manitoba_statutes_input.setText(self.document.manitoba_statutes_special_deposit_citation)
+        self.upu_tracking_number_input.setText(self.document.upu_tracking_number or "")
+        self.jurisdictional_delivery_tag_display.setText(self.document.jurisdictional_delivery_tag or "N/A")
         self.clauses_list_widget.clear()
         for clause_obj in self.document.clauses:
             self.clauses_list_widget.addItem(str(clause_obj))

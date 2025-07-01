@@ -31,8 +31,9 @@ class SettingsView(QWidget):
             "auto_validate_codex_memory": True,
             "allow_clause_conversion": True,
             "local_archive_source_uploads": True,
-            "auto_save_enabled": True,             # New for Auto-Save
-            "auto_save_interval_minutes": 5        # New for Auto-Save
+            "auto_save_enabled": True,
+            "auto_save_interval_minutes": 5,
+            "daily_assistant_enabled": True        # New for Daily Assistant
             # Add other settings from the full list in Part II.A.1 with defaults
         }
 
@@ -138,6 +139,16 @@ class SettingsView(QWidget):
         )
         ai_automation_layout.addWidget(self.zip_rewrite_ai_checkbox, 2, 0)
         ai_automation_layout.addWidget(QLabel("Grants ZIP modules permission for AI self-optimization. (Placeholder)"), 2, 1)
+
+        # Enable Daily Assistant Mode - New
+        self.daily_assistant_checkbox = QCheckBox("Enable Daily Assistant Mode")
+        self.daily_assistant_checkbox.setToolTip("Enables the AI to provide daily reminders and suggestions.")
+        self.daily_assistant_checkbox.setChecked(self.settings.get("daily_assistant_enabled", True)) # Default ON
+        self.daily_assistant_checkbox.stateChanged.connect(
+            lambda state: self.settings.update({"daily_assistant_enabled": state == Qt.CheckState.Checked.value})
+        )
+        ai_automation_layout.addWidget(self.daily_assistant_checkbox, 3, 0)
+        ai_automation_layout.addWidget(QLabel("AI provides daily reminders and suggestions. (Placeholder functionality)"), 3, 1)
 
         # Enable Offline Mode / Autonomous AI
         self.offline_mode_checkbox = QCheckBox("Enable Offline Mode / Autonomous AI")

@@ -15,7 +15,8 @@ from .deposit_view import DepositView
 from .settings_view import SettingsView
 from .dashboard_view import DashboardView
 from app.ui.dialogs.personal_info_dialog import PersonalInfoDialog
-from .ledger_view import LedgerView # Import LedgerView
+from .ledger_view import LedgerView
+from app.core.daily_assistant_agent import DailyAssistantAgent # Import DailyAssistantAgent
 from app.utils.constants import (DOC_TRUST, DOC_CHARTER, DOC_DEPOSIT,
                                  COLOR_EQUITY, COLOR_POSTAL, COLOR_NATURAL_LAW, COLOR_DEFAULT_BG)
 from app.ui.trust_view import TrustView
@@ -57,6 +58,28 @@ class MainWindow(QMainWindow):
         self._ensure_data_directories_exist()
         self._apply_initial_styling()
         self._setup_auto_save_timer()
+        self._run_daily_assistant_on_startup()
+
+
+    def _run_daily_assistant_on_startup(self):
+        if hasattr(self, 'settings_view') and self.settings_view.get_setting("daily_assistant_enabled"):
+            if hasattr(self, 'dashboard_view'):
+                try:
+                    assistant = DailyAssistantAgent(app_context=self) # Pass main_window as context
+                    reminders = assistant.get_daily_reminders()
+                    if reminders:
+                        for reminder in reminders:
+                            self.dashboard_view.add_notification(f"Daily Assistant: {reminder}")
+                        # Optionally, show a summary QMessageBox as well for more prominence on startup
+                        # QMessageBox.information(self, "Daily Assistant Reminders",
+                        #                         "The Daily Assistant has some reminders for you (check Dashboard notifications).")
+                    else:
+                        self.dashboard_view.add_notification("Daily Assistant: No specific reminders today.")
+                except Exception as e:
+                    print(f"Error running Daily Assistant on startup: {e}")
+                    if hasattr(self, 'dashboard_view'):
+                        self.dashboard_view.add_notification(f"Error initializing Daily Assistant: {e}")
+
 
     def _setup_auto_save_timer(self):
         self.auto_save_timer = QTimer(self)
