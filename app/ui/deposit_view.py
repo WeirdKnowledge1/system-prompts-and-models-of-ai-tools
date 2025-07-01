@@ -125,20 +125,55 @@ class DepositView(QWidget):
         clauses_group = QGroupBox("Clauses")
         clauses_layout = QVBoxLayout()
         self.clauses_list_widget = QListWidget()
+        self.clauses_list_widget.itemSelectionChanged.connect(self.display_selected_clause_details)
         clauses_layout.addWidget(self.clauses_list_widget)
 
-        clause_buttons_layout = QHBoxLayout()
-        self.add_clause_button = QPushButton("Add Clause")
-        self.add_clause_button.clicked.connect(self.add_clause)
-        self.edit_clause_button = QPushButton("Edit Clause")
-        self.edit_clause_button.setEnabled(False)
-        self.remove_clause_button = QPushButton("Remove Clause")
-        self.remove_clause_button.setEnabled(False)
+        # --- Selected Clause Details Panel ---
+        self.selected_clause_details_group = QGroupBox("Selected Clause Details")
+        selected_clause_layout = QGridLayout()
 
-        clause_buttons_layout.addWidget(self.add_clause_button)
-        clause_buttons_layout.addWidget(self.edit_clause_button)
-        clause_buttons_layout.addWidget(self.remove_clause_button)
-        clauses_layout.addLayout(clause_buttons_layout)
+        self.sel_clause_id_label = QLabel("ID:")
+        self.sel_clause_id_value = QLabel("")
+        selected_clause_layout.addWidget(self.sel_clause_id_label, 0, 0)
+        selected_clause_layout.addWidget(self.sel_clause_id_value, 0, 1)
+
+        self.sel_clause_jurisdiction_label = QLabel("Jurisdiction:")
+        self.sel_clause_jurisdiction_value = QLabel("")
+        selected_clause_layout.addWidget(self.sel_clause_jurisdiction_label, 1, 0)
+        selected_clause_layout.addWidget(self.sel_clause_jurisdiction_value, 1, 1)
+
+        self.sel_clause_origin_label = QLabel("Origin:")
+        self.sel_clause_origin_value = QLabel("")
+        selected_clause_layout.addWidget(self.sel_clause_origin_label, 2, 0)
+        selected_clause_layout.addWidget(self.sel_clause_origin_value, 2, 1)
+
+        self.sel_clause_text_label = QLabel("Text:")
+        self.sel_clause_text_value = QTextEdit()
+        self.sel_clause_text_value.setReadOnly(True)
+        selected_clause_layout.addWidget(self.sel_clause_text_label, 3, 0, 1, 2)
+        selected_clause_layout.addWidget(self.sel_clause_text_value, 4, 0, 1, 2)
+
+        self.edit_selected_clause_button = QPushButton("Edit Selected Clause")
+        self.edit_selected_clause_button.setEnabled(False)
+        self.edit_selected_clause_button.clicked.connect(self.edit_selected_clause)
+        selected_clause_layout.addWidget(self.edit_selected_clause_button, 5, 0, 1, 2)
+
+        self.selected_clause_details_group.setLayout(selected_clause_layout)
+        self.selected_clause_details_group.setVisible(False)
+        clauses_layout.addWidget(self.selected_clause_details_group)
+
+        # --- Clause Action Buttons ---
+        clause_action_buttons_layout = QHBoxLayout()
+        self.add_clause_button = QPushButton("Add New Clause")
+        self.add_clause_button.clicked.connect(self.add_clause)
+        self.remove_clause_button = QPushButton("Remove Selected Clause")
+        self.remove_clause_button.setEnabled(False)
+        self.remove_clause_button.clicked.connect(self.remove_selected_clause)
+
+        clause_action_buttons_layout.addWidget(self.add_clause_button)
+        clause_action_buttons_layout.addWidget(self.remove_clause_button)
+        clauses_layout.addLayout(clause_action_buttons_layout)
+
         clauses_group.setLayout(clauses_layout)
         main_layout.addWidget(clauses_group)
 
@@ -197,8 +232,8 @@ class DepositView(QWidget):
         self.manitoba_statutes_input.setText(self.document.manitoba_statutes_special_deposit_citation)
 
         self.clauses_list_widget.clear()
-        for clause_dict in self.document.clauses:
-            self.clauses_list_widget.addItem(f"ID: {clause_dict.get('id', 'N/A')} - {clause_dict.get('text', '')}")
+        for clause_obj in self.document.clauses: # Now Clause objects
+            self.clauses_list_widget.addItem(str(clause_obj)) # Use Clause.__str__
 
     def add_filed_document_item(self):
         doc_text = self.add_filed_doc_input.text().strip()
@@ -218,11 +253,23 @@ class DepositView(QWidget):
             # This requires matching based on the text, which is brittle.
             # A more robust way would be to store objects or unique IDs.
             # For Phase 1, we'll find by text.
-            item_text = item.text()
-            self.document.filed_documents = [
-                fd for fd in self.document.filed_documents if fd.get("doc_name") != item_text and
-                (fd.get("doc_name") + (f" ({fd.get('details')})" if fd.get("details") else "")) != item_text
-            ]
+            # This is brittle. A better way would be to store an ID with the QListWidgetItem.
+            item_text_to_remove = item.text() # This is the display text
+
+            # Find the corresponding dict in self.document.filed_documents
+            # This assumes display_text is unique enough or we remove the first match.
+            found_doc_to_remove = None
+            for i, fd_dict in enumerate(self.document.filed_documents):
+                current_display_text = fd_dict.get("doc_name", "Unnamed Document")
+                if fd_dict.get("details"):
+                    current_display_text += f" ({fd_dict.get('details')})"
+                if current_display_text == item_text_to_remove:
+                    found_doc_to_remove = i
+                    break
+
+            if found_doc_to_remove is not None:
+                self.document.filed_documents.pop(found_doc_to_remove)
+
             del item
         else:
             QMessageBox.warning(self, "Selection Error", "Please select a filed document to remove.")
@@ -235,14 +282,68 @@ class DepositView(QWidget):
         QMessageBox.information(self, "New Document", "New Special Deposit document initialized.")
 
     def add_clause(self):
-        clause_text = f"New deposit clause {len(self.document.clauses) + 1}"
-        clause_id = f"DEPOSIT-CLAUSE-{len(self.document.clauses) + 1:03d}"
-        self.document.add_clause(clause_text, clause_id=clause_id, jurisdiction=self.document.jurisdiction)
-        self.clauses_list_widget.addItem(f"ID: {clause_id} - {clause_text}")
-        QMessageBox.information(self, "Clause Added", f"Clause '{clause_text}' added (placeholder).")
+        clause_text = f"New sample clause for Deposit {len(self.document.clauses) + 1}"
+        new_clause = self.document.add_clause(
+            clause_text=clause_text,
+            jurisdiction=self.document.jurisdiction, # Default to doc's jurisdiction
+            origin="User Input via Basic Add"
+        )
+        self.clauses_list_widget.addItem(str(new_clause))
+        QMessageBox.information(self, "Clause Added", f"Clause '{new_clause.id}' added.")
+
+    def display_selected_clause_details(self):
+        selected_items = self.clauses_list_widget.selectedItems()
+        if selected_items:
+            current_row = self.clauses_list_widget.currentRow()
+            if 0 <= current_row < len(self.document.clauses):
+                clause_obj = self.document.clauses[current_row]
+                self.sel_clause_id_value.setText(clause_obj.id)
+                self.sel_clause_jurisdiction_value.setText(clause_obj.jurisdiction)
+                self.sel_clause_origin_value.setText(clause_obj.origin)
+                self.sel_clause_text_value.setPlainText(clause_obj.text)
+                self.selected_clause_details_group.setVisible(True)
+                self.edit_selected_clause_button.setEnabled(True)
+                self.remove_clause_button.setEnabled(True)
+            else:
+                self.selected_clause_details_group.setVisible(False)
+                self.edit_selected_clause_button.setEnabled(False)
+                self.remove_clause_button.setEnabled(False)
+        else:
+            self.selected_clause_details_group.setVisible(False)
+            self.edit_selected_clause_button.setEnabled(False)
+            self.remove_clause_button.setEnabled(False)
+
+    def edit_selected_clause(self):
+        current_row = self.clauses_list_widget.currentRow()
+        if current_row >= 0:
+            clause_obj = self.document.clauses[current_row]
+            QMessageBox.information(self, "Edit Clause", f"Editing clause: {clause_obj.id} (Placeholder).")
+            # Actual edit dialog and logic to be implemented later
+        else:
+            QMessageBox.warning(self, "Edit Clause", "No clause selected.")
+
+    def remove_selected_clause(self):
+        current_row = self.clauses_list_widget.currentRow()
+        if current_row >= 0:
+            clause_obj = self.document.clauses[current_row]
+            reply = QMessageBox.question(self, "Remove Clause",
+                                         f"Are you sure you want to remove clause: {clause_obj.id}?",
+                                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                         QMessageBox.StandardButton.No)
+            if reply == QMessageBox.StandardButton.Yes:
+                self.document.clauses.pop(current_row)
+                self.clauses_list_widget.takeItem(current_row)
+                self.display_selected_clause_details() # Clear/update details panel
+                QMessageBox.information(self, "Clause Removed", f"Clause {clause_obj.id} removed.")
+        else:
+            QMessageBox.warning(self, "Remove Clause", "No clause selected.")
 
     def save_document(self):
-        self._collect_data_from_ui()
+        self._collect_data_from_ui() # Ensure document object is up-to-date with UI text fields
+
+        if not self._validate_document_basic():
+            return
+
         if not self.current_document_path:
             deposit_dir = os.path.join(CODEX_VAULT_DIR, "deposits")
             safe_filename = "".join(c if c.isalnum() or c in (' ', '_', '-') else '_' for c in self.document.name)
@@ -297,3 +398,22 @@ if __name__ == '__main__':
     deposit_view.setGeometry(100,100, 800, 800)
     deposit_view.show()
     sys.exit(app.exec())
+
+    def _validate_document_basic(self) -> bool:
+        """Performs basic validation on the document before saving."""
+        self._collect_data_from_ui() # Ensure self.document is up-to-date
+
+        errors = []
+        if not self.document.name.strip():
+            errors.append("Deposit Document Name cannot be empty.")
+        if not self.document.filed_documents: # Example: must have at least one filed document
+            errors.append("At least one Filed Document (e.g., BC/CLB) must be listed.")
+        if not self.document.source_validation_details.strip():
+            errors.append("Source Validation Details cannot be empty.")
+
+        # Add more checks as needed for other critical fields.
+
+        if errors:
+            QMessageBox.warning(self, "Validation Error", "\n".join(errors))
+            return False
+        return True

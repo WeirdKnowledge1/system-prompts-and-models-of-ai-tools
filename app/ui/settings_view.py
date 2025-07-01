@@ -23,6 +23,7 @@ class SettingsView(QWidget):
             "offline_mode_autonomous_ai_enabled": False, # From full list
             "natural_law_final_jurisdiction_enabled": False, # From full list
             "enforce_clauseconformer_all_docs": True, # From full list
+            "jurisdictional_colors_enabled": True, # Part IV.B
             # Add other settings from the full list in Part II.A.1 with defaults
         }
 
@@ -121,6 +122,15 @@ class SettingsView(QWidget):
         primary_toggles_grid.addWidget(self.offline_mode_checkbox, 4, 0)
         primary_toggles_grid.addWidget(QLabel("Enables full AI functionality without internet access. (Placeholder)"), 4, 1)
 
+        # Jurisdictional Visual Feedback (Color Scheme Toggle) - Part IV.B
+        self.jurisdictional_colors_checkbox = QCheckBox("Enable Jurisdictional Visual Feedback (Colors)")
+        self.jurisdictional_colors_checkbox.setToolTip("Changes UI colors based on document jurisdiction (Equity, Postal, Natural Law).")
+        self.jurisdictional_colors_checkbox.setChecked(self.settings.get("jurisdictional_colors_enabled", True)) # Default to True
+        self.jurisdictional_colors_checkbox.stateChanged.connect(
+            lambda state: self.settings.update({"jurisdictional_colors_enabled": state == Qt.CheckState.Checked.value})
+        )
+        primary_toggles_grid.addWidget(self.jurisdictional_colors_checkbox, 5, 0)
+        primary_toggles_grid.addWidget(QLabel("Applies color schemes to document views based on their governing law."), 5, 1)
 
         primary_toggles_group.setLayout(primary_toggles_grid)
         settings_layout.addWidget(primary_toggles_group)

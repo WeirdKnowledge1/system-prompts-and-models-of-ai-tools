@@ -1,5 +1,6 @@
 import uuid
 import datetime
+from .clause_model import Clause # Import the Clause class
 
 class BaseDocument:
     """
@@ -13,19 +14,22 @@ class BaseDocument:
         self.last_modified_date = self.creation_date
         self.jurisdiction = "Lex Aequies" # Default, can be changed
         self.master_ai_concept = "Postal Equity App Core AI" # Placeholder concept
-        self.clauses = [] # Will hold Clause objects
+        self.clauses: list[Clause] = [] # Will hold Clause objects
         self.version = 1
         self.metadata = {} # For any additional, non-structured data
 
-    def add_clause(self, clause_text: str, clause_id: str = None, jurisdiction: str = None):
-        # This is a placeholder for now. Proper Clause object will be used later.
-        # from .clause_model import Clause # Avoid circular import for now
-        # clause = Clause(text=clause_text, clause_id=clause_id, jurisdiction=jurisdiction)
-        # self.clauses.append(clause)
-        # For now, just storing text.
-        self.clauses.append({"id": clause_id or str(uuid.uuid4()), "text": clause_text, "jurisdiction": jurisdiction or self.jurisdiction})
+    def add_clause(self, clause_text: str, clause_id: str = None,
+                   jurisdiction: str = None, origin: str = "User Input"):
+        """Adds a new Clause object to the document."""
+        if jurisdiction is None:
+            jurisdiction = self.jurisdiction # Default to document's jurisdiction
+
+        new_clause = Clause(text=clause_text, clause_id=clause_id,
+                            jurisdiction=jurisdiction, origin=origin)
+        self.clauses.append(new_clause)
         self.last_modified_date = datetime.datetime.now().isoformat()
         self.version += 1
+        return new_clause # Return the created clause object
 
     def update_metadata(self, key: str, value: any):
         self.metadata[key] = value
@@ -41,33 +45,61 @@ class BaseDocument:
             "last_modified_date": self.last_modified_date,
             "jurisdiction": self.jurisdiction,
             "master_ai_concept": self.master_ai_concept,
-            "clauses": self.clauses, # In Phase 1, clauses are simple dicts
+            "clauses": [clause.to_dict() for clause in self.clauses], # Serialize Clause objects
             "version": self.version,
             "metadata": self.metadata,
             # Specific fields from subclasses will be added here
         }
 
     @classmethod
-    def from_dict(cls, data: dict):
-        """Deserializes the document from a dictionary."""
-        # This is a generic loader. Subclasses should override for specific fields.
-        doc_type = data.get("doc_type")
-        if doc_type == "Michaud Family Trust":
-            doc = MichaudFamilyTrust(name=data.get("name", "Untitled Trust"))
-        elif doc_type == "Michaud Family Postal Charter":
-            doc = MichaudFamilyPostalCharter(name=data.get("name", "Untitled Charter"))
-        elif doc_type == "Michaud Special Deposit Document":
-            doc = MichaudSpecialDepositDocument(name=data.get("name", "Untitled Deposit"))
+    def from_dict(cls, data: dict, instance=None):
+        """
+        Populates a document instance (or a new one if instance is None)
+        from a dictionary. This method is intended to be called by subclasses
+        after they have instantiated themselves.
+        If instance is provided, it populates that instance.
+        Otherwise, it creates a new instance of 'cls' (which should be BaseDocument
+        if called directly on BaseDocument, or the specific subclass if that subclass's
+        from_dict called super correctly).
+        """
+        if instance is None:
+            # This path is taken if BaseDocument.from_dict is called directly
+            # or if a subclass doesn't provide an instance.
+            # We need to determine the correct type to instantiate.
+            doc_type_from_data = data.get("doc_type")
+            if cls == BaseDocument: # If called on BaseDocument itself
+                if doc_type_from_data == MichaudFamilyTrust.DOC_TYPE_NAME:
+                    doc = MichaudFamilyTrust(name=data.get("name", "Untitled Trust"))
+                elif doc_type_from_data == MichaudFamilyPostalCharter.DOC_TYPE_NAME:
+                    doc = MichaudFamilyPostalCharter(name=data.get("name", "Untitled Charter"))
+                elif doc_type_from_data == MichaudSpecialDepositDocument.DOC_TYPE_NAME:
+                    doc = MichaudSpecialDepositDocument(name=data.get("name", "Untitled Deposit"))
+                else: # Unknown type or base type requested
+                    doc = cls(name=data.get("name", "Untitled Document"),
+                              doc_type=doc_type_from_data or "BaseDocument")
+            else: # If called via super() from a subclass's from_dict, cls is BaseDocument
+                  # but we should have received an instance. If not, this is unusual.
+                  # For safety, create instance of current cls, though this might be BaseDocument
+                  # if super() wasn't used as expected.
+                  # The correct pattern is Subclass.from_dict creates instance, then calls super().from_dict(data, instance=doc)
+                doc = cls(name=data.get("name", "Untitled Document"),
+                          doc_type=data.get("doc_type", "BaseDocument"))
         else:
-            # Fallback or raise error
-            doc = cls(name=data.get("name", "Untitled Document"), doc_type=doc_type)
+            doc = instance
 
-        doc.id = data.get("id", str(uuid.uuid4()))
+        # Populate base fields
+        doc.id = data.get("id", doc.id if hasattr(doc, 'id') and doc.id else str(uuid.uuid4()))
+        # Name and doc_type should have been set by the constructor of 'doc'
+        doc.name = data.get("name", doc.name)
+        doc.doc_type = data.get("doc_type", doc.doc_type)
+
         doc.creation_date = data.get("creation_date", datetime.datetime.now().isoformat())
         doc.last_modified_date = data.get("last_modified_date", doc.creation_date)
         doc.jurisdiction = data.get("jurisdiction", "Lex Aequies")
         doc.master_ai_concept = data.get("master_ai_concept", "Postal Equity App Core AI")
-        doc.clauses = data.get("clauses", []) # In Phase 1, clauses are simple dicts
+
+        doc.clauses = [Clause.from_dict(c_data) for c_data in data.get("clauses", [])]
+
         doc.version = data.get("version", 1)
         doc.metadata = data.get("metadata", {})
         return doc
@@ -111,17 +143,24 @@ class MichaudFamilyTrust(BaseDocument):
 
     @classmethod
     def from_dict(cls, data: dict):
-        doc = super().from_dict(data) # This will call the correct class constructor via cls()
-        if isinstance(doc, MichaudFamilyTrust): # Ensure we got the right type
-            doc.settlors = data.get("settlors", [])
-            doc.trustees = data.get("trustees", [])
-            doc.beneficiaries = data.get("beneficiaries", [])
-            doc.support_allodial_dominion = data.get("support_allodial_dominion", True)
-            doc.land_rights_details = data.get("land_rights_details", "")
-            doc.name_control_details = data.get("name_control_details", "")
-            doc.equitable_mortgage_reconciliation_details = data.get("equitable_mortgage_reconciliation_details", "")
-            doc.postal_charter_ref = data.get("postal_charter_ref")
-            doc.special_deposit_ref = data.get("special_deposit_ref")
+        # 1. Create an instance of MichaudFamilyTrust
+        doc = cls(name=data.get("name", "Untitled Trust"))
+
+        # 2. Populate base fields using BaseDocument.from_dict, passing the instance
+        #    super() here refers to BaseDocument
+        doc = super(MichaudFamilyTrust, cls).from_dict(data, instance=doc)
+
+        # 3. Populate MichaudFamilyTrust-specific fields
+        #    No need for isinstance check if super().from_dict guarantees returning the passed instance
+        doc.settlors = data.get("settlors", [])
+        doc.trustees = data.get("trustees", [])
+        doc.beneficiaries = data.get("beneficiaries", [])
+        doc.support_allodial_dominion = data.get("support_allodial_dominion", True)
+        doc.land_rights_details = data.get("land_rights_details", "")
+        doc.name_control_details = data.get("name_control_details", "")
+        doc.equitable_mortgage_reconciliation_details = data.get("equitable_mortgage_reconciliation_details", "")
+        doc.postal_charter_ref = data.get("postal_charter_ref")
+        doc.special_deposit_ref = data.get("special_deposit_ref")
         return doc
 
 
@@ -158,15 +197,16 @@ class MichaudFamilyPostalCharter(BaseDocument):
 
     @classmethod
     def from_dict(cls, data: dict):
-        doc = super().from_dict(data)
-        if isinstance(doc, MichaudFamilyPostalCharter):
-            doc.upu_recognized_format_details = data.get("upu_recognized_format_details", "")
-            doc.global_upu_tracking_number_fields = data.get("global_upu_tracking_number_fields", "")
-            doc.canada_post_format_compliance_details = data.get("canada_post_format_compliance_details", "")
-            doc.usps_format_compliance_details = data.get("usps_format_compliance_details", "")
-            doc.vienna_convention_reference_details = data.get("vienna_convention_reference_details", "")
-            doc.postal_treaty_law_reference_details = data.get("postal_treaty_law_reference_details", "")
-            doc.family_trust_ref = data.get("family_trust_ref")
+        doc = cls(name=data.get("name", "Untitled Charter"))
+        doc = super(MichaudFamilyPostalCharter, cls).from_dict(data, instance=doc)
+
+        doc.upu_recognized_format_details = data.get("upu_recognized_format_details", "")
+        doc.global_upu_tracking_number_fields = data.get("global_upu_tracking_number_fields", "")
+        doc.canada_post_format_compliance_details = data.get("canada_post_format_compliance_details", "")
+        doc.usps_format_compliance_details = data.get("usps_format_compliance_details", "")
+        doc.vienna_convention_reference_details = data.get("vienna_convention_reference_details", "")
+        doc.postal_treaty_law_reference_details = data.get("postal_treaty_law_reference_details", "")
+        doc.family_trust_ref = data.get("family_trust_ref")
         return doc
 
 class MichaudSpecialDepositDocument(BaseDocument):
@@ -210,18 +250,19 @@ class MichaudSpecialDepositDocument(BaseDocument):
 
     @classmethod
     def from_dict(cls, data: dict):
-        doc = super().from_dict(data)
-        if isinstance(doc, MichaudSpecialDepositDocument):
-            doc.filed_documents = data.get("filed_documents", [])
-            doc.source_validation_details = data.get("source_validation_details", "")
-            doc.trust_beneficiary_alignment_notes = data.get("trust_beneficiary_alignment_notes", "")
-            doc.postal_equity_agent_signature_placeholder = data.get("postal_equity_agent_signature_placeholder", "")
-            doc.notary_signature_placeholder = data.get("notary_signature_placeholder", "")
-            doc.family_trust_ref = data.get("family_trust_ref")
-            doc.postal_charter_ref = data.get("postal_charter_ref")
-            doc.foreign_trustee_act_citation = data.get("foreign_trustee_act_citation", "")
-            doc.subrogate_practice_act_citation = data.get("subrogate_practice_act_citation", "")
-            doc.manitoba_statutes_special_deposit_citation = data.get("manitoba_statutes_special_deposit_citation", "")
+        doc = cls(name=data.get("name", "Untitled Deposit"))
+        doc = super(MichaudSpecialDepositDocument, cls).from_dict(data, instance=doc)
+
+        doc.filed_documents = data.get("filed_documents", [])
+        doc.source_validation_details = data.get("source_validation_details", "")
+        doc.trust_beneficiary_alignment_notes = data.get("trust_beneficiary_alignment_notes", "")
+        doc.postal_equity_agent_signature_placeholder = data.get("postal_equity_agent_signature_placeholder", "")
+        doc.notary_signature_placeholder = data.get("notary_signature_placeholder", "")
+        doc.family_trust_ref = data.get("family_trust_ref")
+        doc.postal_charter_ref = data.get("postal_charter_ref")
+        doc.foreign_trustee_act_citation = data.get("foreign_trustee_act_citation", "")
+        doc.subrogate_practice_act_citation = data.get("subrogate_practice_act_citation", "")
+        doc.manitoba_statutes_special_deposit_citation = data.get("manitoba_statutes_special_deposit_citation", "")
         return doc
 
 # Example Usage (for testing, not part of the final app logic here)
