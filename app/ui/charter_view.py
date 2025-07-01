@@ -5,12 +5,13 @@ from PyQt6.QtCore import Qt
 import json
 import os
 import datetime
+import uuid # Import uuid
 
 from app.core.document_models import MichaudFamilyPostalCharter
 from app.core.clause_model import Clause
 from app.ui.dialogs.edit_clause_dialog import EditClauseDialog
 from app.ui.dialogs.qr_display_dialog import QRDisplayDialog
-from app.core.agents import ClauseConformer, VeritasProof, DocumentTracker # Import DocumentTracker
+from app.core.agents import ClauseConformer, VeritasProof, DocumentTracker
 from app.utils.constants import CODEX_VAULT_DIR
 
 class CharterView(QWidget):
@@ -18,23 +19,35 @@ class CharterView(QWidget):
         super().__init__(parent)
         self.current_document_path = None
         self.document = MichaudFamilyPostalCharter(name="Untitled Michaud Family Postal Charter")
+        self.is_modified = False # Initialize is_modified flag
         self._setup_ui()
+        self._connect_modification_signals()
+
+    def _connect_modification_signals(self):
+        self.name_input.textChanged.connect(self._mark_as_modified)
+        self.jurisdiction_input.textChanged.connect(self._mark_as_modified)
+        self.upu_format_input.textChanged.connect(self._mark_as_modified)
+        self.global_tracking_input.textChanged.connect(self._mark_as_modified)
+        self.canada_post_input.textChanged.connect(self._mark_as_modified)
+        self.usps_input.textChanged.connect(self._mark_as_modified)
+        self.vienna_ref_input.textChanged.connect(self._mark_as_modified)
+        self.postal_treaty_input.textChanged.connect(self._mark_as_modified)
+        self.family_trust_ref_input.textChanged.connect(self._mark_as_modified)
+
+    def _mark_as_modified(self, text=None):
+        self.is_modified = True
 
     def _setup_ui(self):
         main_layout = QVBoxLayout(self)
-
-        # --- Jurisdiction Header Label ---
         self.jurisdiction_header_label = QLabel("Jurisdiction: N/A")
         self.jurisdiction_header_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.jurisdiction_header_label.setStyleSheet("font-weight: bold; font-size: 11pt; padding: 5px; background-color: #E8E8E8; border-bottom: 1px solid #C0C0C0;")
         main_layout.addWidget(self.jurisdiction_header_label)
-
-        # Document Info Group
         doc_info_group = QGroupBox("Document Information")
         doc_info_layout = QGridLayout()
         self.name_label = QLabel("Charter Name:")
         self.name_input = QLineEdit()
-        self.name_input.textChanged.connect(lambda text: setattr(self.document, 'name', text))
+        self.name_input.textChanged.connect(lambda text: setattr(self.document, 'name', text)) # Also calls _mark_as_modified
         doc_info_layout.addWidget(self.name_label, 0, 0)
         doc_info_layout.addWidget(self.name_input, 0, 1)
         self.id_label = QLabel("Document ID:")
@@ -43,13 +56,11 @@ class CharterView(QWidget):
         doc_info_layout.addWidget(self.id_display, 1, 1)
         self.jurisdiction_label = QLabel("Jurisdiction:")
         self.jurisdiction_input = QLineEdit(self.document.jurisdiction)
-        self.jurisdiction_input.textChanged.connect(self._update_document_jurisdiction)
+        self.jurisdiction_input.textChanged.connect(self._update_document_jurisdiction) # Also calls _mark_as_modified
         doc_info_layout.addWidget(self.jurisdiction_label, 2, 0)
         doc_info_layout.addWidget(self.jurisdiction_input, 2, 1)
         doc_info_group.setLayout(doc_info_layout)
         main_layout.addWidget(doc_info_group)
-
-        # Charter Details Group
         charter_details_group = QGroupBox("Postal Charter Specifics")
         charter_details_layout = QVBoxLayout()
         self.upu_format_label = QLabel("UPU Recognized Format Details:")
@@ -82,15 +93,11 @@ class CharterView(QWidget):
         charter_details_layout.addWidget(self.family_trust_ref_input)
         charter_details_group.setLayout(charter_details_layout)
         main_layout.addWidget(charter_details_group)
-
-        # Clauses Group
         clauses_group = QGroupBox("Clauses")
         clauses_layout = QVBoxLayout()
         self.clauses_list_widget = QListWidget()
         self.clauses_list_widget.itemSelectionChanged.connect(self.display_selected_clause_details)
         clauses_layout.addWidget(self.clauses_list_widget)
-
-        # Selected Clause Details Panel
         self.selected_clause_details_group = QGroupBox("Selected Clause Details")
         selected_clause_layout = QGridLayout()
         self.sel_clause_id_label = QLabel("ID:")
@@ -143,8 +150,6 @@ class CharterView(QWidget):
         self.selected_clause_details_group.setLayout(selected_clause_layout)
         self.selected_clause_details_group.setVisible(False)
         clauses_layout.addWidget(self.selected_clause_details_group)
-
-        # Clause Action Buttons
         clause_action_buttons_layout = QHBoxLayout()
         self.add_clause_button = QPushButton("Add New Clause")
         self.add_clause_button.clicked.connect(self.add_clause)
@@ -164,8 +169,6 @@ class CharterView(QWidget):
         clauses_layout.addLayout(clause_action_buttons_layout)
         clauses_group.setLayout(clauses_layout)
         main_layout.addWidget(clauses_group)
-
-        # File Operations
         file_ops_layout = QHBoxLayout()
         self.new_button = QPushButton("New Charter Document")
         self.new_button.clicked.connect(self.new_document)
@@ -177,18 +180,20 @@ class CharterView(QWidget):
         file_ops_layout.addWidget(self.save_button)
         file_ops_layout.addWidget(self.load_button)
         main_layout.addLayout(file_ops_layout)
-
-        # Conformance Check Button
         self.conformance_check_button = QPushButton("Run Basic Conformance Check")
         self.conformance_check_button.clicked.connect(self.run_basic_conformance_check)
         main_layout.addWidget(self.conformance_check_button, alignment=Qt.AlignmentFlag.AlignLeft)
-
         main_layout.addStretch()
         self.load_document_data_into_ui()
 
+    def _update_document_jurisdiction(self, text: str):
+        self.document.jurisdiction = text
+        self.jurisdiction_header_label.setText(f"Document Jurisdiction: {text}")
+        self._mark_as_modified()
+
     def _collect_data_from_ui(self):
         self.document.name = self.name_input.text()
-        self.document.jurisdiction = self.jurisdiction_input.text()
+        # self.document.jurisdiction handled by _update_document_jurisdiction
         self.document.upu_recognized_format_details = self.upu_format_input.toPlainText()
         self.document.global_upu_tracking_number_fields = self.global_tracking_input.toPlainText()
         self.document.canada_post_format_compliance_details = self.canada_post_input.toPlainText()
@@ -201,6 +206,7 @@ class CharterView(QWidget):
         self.name_input.setText(self.document.name)
         self.id_display.setText(self.document.id)
         self.jurisdiction_input.setText(self.document.jurisdiction)
+        self.jurisdiction_header_label.setText(f"Document Jurisdiction: {self.document.jurisdiction}")
         self.upu_format_input.setPlainText(self.document.upu_recognized_format_details)
         self.global_tracking_input.setPlainText(self.document.global_upu_tracking_number_fields)
         self.canada_post_input.setPlainText(self.document.canada_post_format_compliance_details)
@@ -212,6 +218,7 @@ class CharterView(QWidget):
         for clause_obj in self.document.clauses:
             self.clauses_list_widget.addItem(str(clause_obj))
         self.display_selected_clause_details()
+        self.is_modified = False # Reset modified flag
         main_window_instance = self.window()
         if hasattr(main_window_instance, 'settings_view') and \
            hasattr(main_window_instance.settings_view, 'get_setting') and \
@@ -225,9 +232,9 @@ class CharterView(QWidget):
                 doc_tracker.untrack_document(self.document.id)
             except Exception as e:
                 print(f"Error untracking charter {self.document.id} in new_document: {e}")
-
         self.document = MichaudFamilyPostalCharter(name="Untitled Michaud Family Postal Charter")
         self.current_document_path = None
+        self.is_modified = False
         self.load_document_data_into_ui()
         QMessageBox.information(self, "New Document", "New Postal Charter document initialized.")
 
@@ -239,6 +246,7 @@ class CharterView(QWidget):
             self.clauses_list_widget.addItem(str(new_clause))
             self.clauses_list_widget.setCurrentRow(self.clauses_list_widget.count() - 1)
             QMessageBox.information(self, "Clause Added", f"Clause '{new_clause.id}' successfully added.")
+            self._mark_as_modified()
 
     def display_selected_clause_details(self):
         selected_items = self.clauses_list_widget.selectedItems()
@@ -296,6 +304,7 @@ class CharterView(QWidget):
                 self.clauses_list_widget.item(current_row).setText(str(updated_clause))
                 self.display_selected_clause_details()
                 QMessageBox.information(self, "Clause Updated", f"Clause '{updated_clause.id}' successfully updated.")
+                self._mark_as_modified()
         else:
             QMessageBox.warning(self, "Edit Clause", "No clause selected.")
 
@@ -312,31 +321,89 @@ class CharterView(QWidget):
                 self.clauses_list_widget.takeItem(current_row)
                 self.display_selected_clause_details()
                 QMessageBox.information(self, "Clause Removed", f"Clause {clause_obj.id} removed.")
+                self._mark_as_modified()
         else:
             QMessageBox.warning(self, "Remove Clause", "No clause selected.")
 
-    def save_document(self):
+    def save_document(self, silent=False):
         self._collect_data_from_ui()
-        if not self._validate_document_basic(): return
+        if not self._validate_document_basic():
+            if not silent: QMessageBox.warning(self, "Validation Failed", "Cannot save document due to validation errors.")
+            return False
         if not self.current_document_path:
-            charter_dir = os.path.join(CODEX_VAULT_DIR, "charters")
-            safe_filename = "".join(c if c.isalnum() or c in (' ', '_', '-') else '_' for c in self.document.name)
-            safe_filename = safe_filename.replace(' ', '_') + ".mpea_charter"
-            filePath, _ = QFileDialog.getSaveFileName(
-                self, "Save Postal Charter Document",
-                os.path.join(charter_dir, safe_filename),
-                "Michaud Postal Equity App Charter Files (*.mpea_charter);;All Files (*)")
-            if not filePath: return
-            self.current_document_path = filePath
+            return self.save_document_as(silent=silent)
         try:
             with open(self.current_document_path, 'w') as f:
                 json.dump(self.document.to_dict(), f, indent=4)
-            QMessageBox.information(self, "Save Successful", f"Postal Charter document saved to\n{self.current_document_path}")
+            if not silent:
+                QMessageBox.information(self, "Save Successful", f"Postal Charter document saved to\n{self.current_document_path}")
+            else:
+                main_window = self.window()
+                if hasattr(main_window, 'status_bar'):
+                    main_window.status_bar.showMessage(f"Auto-saved: {os.path.basename(self.current_document_path)}", 3000)
+            self.is_modified = False
+            try:
+                doc_tracker = DocumentTracker(app_context=self.window())
+                doc_tracker.track_document_change(self.document.id, self.document.to_dict())
+            except Exception as e:
+                print(f"Error tracking charter change for {self.document.id}: {e}")
+            return True
         except Exception as e:
-            QMessageBox.critical(self, "Save Error", f"Could not save document: {e}")
-            self.current_document_path = None
+            if not silent: QMessageBox.critical(self, "Save Error", f"Could not save document: {e}")
+            else: print(f"Auto-save error for {self.current_document_path}: {e}")
+            return False
+
+    def save_document_as(self, silent=False):
+        self._collect_data_from_ui()
+        if not self._validate_document_basic():
+            if not silent: QMessageBox.warning(self, "Validation Failed", "Cannot save document due to validation errors.")
+            return False
+        charter_dir = os.path.join(CODEX_VAULT_DIR, "charters")
+        safe_default_filename = "".join(c if c.isalnum() or c in (' ', '_', '-') else '_' for c in self.document.name)
+        safe_default_filename = safe_default_filename.replace(' ', '_') + ".mpea_charter"
+        filePath, _ = QFileDialog.getSaveFileName(
+            self, "Save Postal Charter As...",
+            os.path.join(charter_dir, safe_default_filename),
+            "Michaud Postal Equity App Charter Files (*.mpea_charter);;All Files (*)")
+        if not filePath: return False
+        if self.current_document_path and hasattr(self.document, 'id'):
+            try:
+                old_doc_id = self.document.id
+                doc_tracker = DocumentTracker(app_context=self.window())
+                doc_tracker.untrack_document(old_doc_id)
+            except Exception as e:
+                print(f"Error untracking old charter {old_doc_id} during Save As: {e}")
+        self.current_document_path = filePath
+        self.document.id = str(uuid.uuid4())
+        self.id_display.setText(self.document.id)
+        try:
+            with open(self.current_document_path, 'w') as f:
+                json.dump(self.document.to_dict(), f, indent=4)
+            if not silent:
+                QMessageBox.information(self, "Save As Successful", f"Postal Charter document saved to\n{self.current_document_path}")
+            else:
+                main_window = self.window()
+                if hasattr(main_window, 'status_bar'):
+                    main_window.status_bar.showMessage(f"Auto-saved (as new): {os.path.basename(self.current_document_path)}", 3000)
+            self.is_modified = False
+            try:
+                doc_tracker = DocumentTracker(app_context=self.window())
+                doc_tracker.track_document_open(self.document.id, self.current_document_path, self.document.to_dict())
+            except Exception as e:
+                print(f"Error tracking charter after Save As for {self.document.id}: {e}")
+            return True
+        except Exception as e:
+            if not silent: QMessageBox.critical(self, "Save As Error", f"Could not save document: {e}")
+            else: print(f"Auto-save (as new) error for {self.current_document_path}: {e}")
+            return False
 
     def load_document(self):
+        if self.current_document_path and hasattr(self.document, 'id'):
+            try:
+                doc_tracker = DocumentTracker(app_context=self.window())
+                doc_tracker.untrack_document(self.document.id)
+            except Exception as e:
+                print(f"Error untracking charter {self.document.id} before load: {e}")
         charter_dir = os.path.join(CODEX_VAULT_DIR, "charters")
         filePath, _ = QFileDialog.getOpenFileName(
             self, "Load Postal Charter Document", charter_dir,
@@ -346,8 +413,14 @@ class CharterView(QWidget):
             with open(filePath, 'r') as f: doc_data = json.load(f)
             self.document = MichaudFamilyPostalCharter.from_dict(doc_data)
             self.current_document_path = filePath
+            self.is_modified = False
             self.load_document_data_into_ui()
             QMessageBox.information(self, "Load Successful", f"Postal Charter document loaded from\n{filePath}")
+            try:
+                doc_tracker = DocumentTracker(app_context=self.window())
+                doc_tracker.track_document_open(self.document.id, self.current_document_path, self.document.to_dict())
+            except Exception as e:
+                print(f"Error tracking charter open for {self.document.id}: {e}")
         except Exception as e:
             QMessageBox.critical(self, "Load Error", f"Could not load document: {e}")
 
@@ -359,6 +432,7 @@ class CharterView(QWidget):
             item = self.clauses_list_widget.takeItem(current_row)
             self.clauses_list_widget.insertItem(current_row - 1, item)
             self.clauses_list_widget.setCurrentRow(current_row - 1)
+            self._mark_as_modified()
 
     def move_clause_down(self):
         current_row = self.clauses_list_widget.currentRow()
@@ -368,6 +442,7 @@ class CharterView(QWidget):
             item = self.clauses_list_widget.takeItem(current_row)
             self.clauses_list_widget.insertItem(current_row + 1, item)
             self.clauses_list_widget.setCurrentRow(current_row + 1)
+            self._mark_as_modified()
 
     def _generate_clause_qr_code(self):
         current_row = self.clauses_list_widget.currentRow()

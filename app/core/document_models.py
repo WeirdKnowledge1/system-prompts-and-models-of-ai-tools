@@ -1,22 +1,35 @@
 import uuid
 import datetime
-from .clause_model import Clause # Import the Clause class
+from .clause_model import Clause
+from .ledger_models import DocumentLedger # Import DocumentLedger
 
 class BaseDocument:
     """
     Base class for all documents in the Michaud Postal Equity App.
     """
     def __init__(self, name: str, doc_type: str):
-        self.id = str(uuid.uuid4())
-        self.name = name  # Specific name of the document instance, e.g., "Rene Michaud Family Trust 2024"
-        self.doc_type = doc_type # e.g., DOC_TRUST, DOC_CHARTER
+        self.id = str(uuid.uuid4()) # This ID should be unique per document instance
+        self.name = name
+        self.doc_type = doc_type
         self.creation_date = datetime.datetime.now().isoformat()
         self.last_modified_date = self.creation_date
         self.jurisdiction = "Lex Aequies" # Default, can be changed
         self.master_ai_concept = "Postal Equity App Core AI" # Placeholder concept
-        self.clauses: list[Clause] = [] # Will hold Clause objects
+        self.clauses: list[Clause] = []
         self.version = 1
-        self.metadata = {} # For any additional, non-structured data
+        self.metadata = {}
+        self.ledger: DocumentLedger | None = None # Initialize ledger, can also be new DocumentLedger(self.id)
+
+    def get_or_create_ledger(self) -> DocumentLedger:
+        """Ensures a ledger exists for this document and returns it."""
+        if self.ledger is None:
+            self.ledger = DocumentLedger(document_id=self.id)
+            # Optionally, add an initial system entry
+            # self.ledger.add_entry(title="Document Created", entry_type="System", jurisdiction_tag=self.jurisdiction)
+        # Ensure ledger's document_id is synced if self.id changed (e.g. after Save As)
+        if self.ledger.document_id != self.id:
+            self.ledger.document_id = self.id
+        return self.ledger
 
     def add_clause(self, clause_text: str, clause_id: str = None,
                    jurisdiction: str = None, origin: str = "User Input"):
@@ -45,9 +58,10 @@ class BaseDocument:
             "last_modified_date": self.last_modified_date,
             "jurisdiction": self.jurisdiction,
             "master_ai_concept": self.master_ai_concept,
-            "clauses": [clause.to_dict() for clause in self.clauses], # Serialize Clause objects
+            "clauses": [clause.to_dict() for clause in self.clauses],
             "version": self.version,
             "metadata": self.metadata,
+            "ledger": self.ledger.to_dict() if self.ledger else None, # Serialize ledger
             # Specific fields from subclasses will be added here
         }
 
@@ -102,6 +116,16 @@ class BaseDocument:
 
         doc.version = data.get("version", 1)
         doc.metadata = data.get("metadata", {})
+
+        ledger_data = data.get("ledger")
+        if ledger_data:
+            # Pass the document's current ID to ensure ledger is associated correctly,
+            # especially if the document ID was just (re)generated.
+            doc.ledger = DocumentLedger.from_dict(ledger_data, document_id_override=doc.id)
+        else:
+            # Optionally create a new empty ledger if none in data, or leave as None
+            doc.ledger = DocumentLedger(document_id=doc.id) # Ensure new docs get a ledger
+
         return doc
 
 

@@ -2,7 +2,7 @@ import sys
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QTabWidget, QWidget,
                              QVBoxLayout, QLabel, QStatusBar, QMenuBar, QMessageBox, QFileDialog)
 from PyQt6.QtGui import QAction, QIcon
-from PyQt6.QtCore import QUrl, QDir # For QDesktopServices and QDir path conversion
+from PyQt6.QtCore import QUrl, QDir, QTimer # For QDesktopServices, QDir path conversion, and QTimer
 from PyQt6.QtGui import QDesktopServices # For opening URLs/local paths
 import os
 import shutil # For file copying
@@ -13,10 +13,12 @@ from .trust_view import TrustView
 from .charter_view import CharterView
 from .deposit_view import DepositView
 from .settings_view import SettingsView
-# from .ledger_view import LedgerView
+from .dashboard_view import DashboardView
+from app.ui.dialogs.personal_info_dialog import PersonalInfoDialog
+from .ledger_view import LedgerView # Import LedgerView
 from app.utils.constants import (DOC_TRUST, DOC_CHARTER, DOC_DEPOSIT,
                                  COLOR_EQUITY, COLOR_POSTAL, COLOR_NATURAL_LAW, COLOR_DEFAULT_BG)
-from app.ui.trust_view import TrustView # Explicit imports for isinstance checks
+from app.ui.trust_view import TrustView
 from app.ui.charter_view import CharterView
 from app.ui.deposit_view import DepositView
 
@@ -25,43 +27,81 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Michaud Postal Equity App - MPEA")
-        self.setGeometry(100, 100, 1200, 800) # x, y, width, height
+        self.setGeometry(100, 100, 1200, 800)
 
-        # Create tab widget
         self.tab_widget = QTabWidget()
         self.setCentralWidget(self.tab_widget)
 
         # Create actual views
+        self.dashboard_view = DashboardView(self) # Create dashboard first
         self.trust_view = TrustView(self)
         self.charter_view = CharterView(self)
         self.deposit_view = DepositView(self)
-        self.settings_view = SettingsView(self)
-        # self.ledger_view = LedgerView(self) # Placeholder
+        self.settings_view = SettingsView(main_window=self)
+        self.ledger_view = LedgerView(self) # Create LedgerView instance
 
-        # Add tabs with actual views
+        # Add tabs, dashboard first
+        self.tab_widget.addTab(self.dashboard_view, "Master AI Dashboard")
         self.tab_widget.addTab(self.trust_view, DOC_TRUST)
         self.tab_widget.addTab(self.charter_view, DOC_CHARTER)
         self.tab_widget.addTab(self.deposit_view, DOC_DEPOSIT)
+        self.tab_widget.addTab(self.ledger_view, "Document Ledgers") # Add actual LedgerView
         self.tab_widget.addTab(self.settings_view, "System Preferences")
 
-        # Placeholder tabs for other views
-        self.ledger_tab_placeholder = QWidget()
-        self.ledger_tab_placeholder.setLayout(QVBoxLayout())
-        self.ledger_tab_placeholder.layout().addWidget(QLabel("Content for Ledgers will be here."))
-        self.tab_widget.addTab(self.ledger_tab_placeholder, "Ledgers")
-
         self.tab_widget.currentChanged.connect(self._on_tab_changed)
+        # Connect document view signals to update dashboard (conceptual for now)
+        # Example: self.trust_view.document_loaded_signal.connect(self.update_dashboard_current_doc)
 
         self._create_menu_bar()
         self._create_status_bar()
         self._ensure_data_directories_exist()
-        self._apply_initial_styling() # Apply styling to the initially selected tab
+        self._apply_initial_styling()
+        self._setup_auto_save_timer()
+
+    def _setup_auto_save_timer(self):
+        self.auto_save_timer = QTimer(self)
+        self.auto_save_timer.timeout.connect(self._perform_auto_save)
+        self._update_auto_save_timer_interval() # Start it if enabled
+
+    def _update_auto_save_timer_interval(self):
+        if hasattr(self, 'settings_view') and self.settings_view.get_setting("auto_save_enabled"):
+            interval_minutes = self.settings_view.get_setting("auto_save_interval_minutes")
+            self.auto_save_timer.start(interval_minutes * 60 * 1000) # Convert minutes to milliseconds
+            print(f"Auto-save timer started with interval: {interval_minutes} minutes.")
+        else:
+            self.auto_save_timer.stop()
+            print("Auto-save timer stopped.")
+
+    def _perform_auto_save(self):
+        active_view = self._get_active_document_view()
+        if active_view and hasattr(active_view, 'is_modified') and active_view.is_modified:
+            if active_view.current_document_path: # Only auto-save if it has a path
+                print(f"Auto-saving document: {active_view.document.name}")
+                # Call save_document with silent=True
+                # The view's save_document method needs to accept a silent parameter
+                # and not show popups if silent is True.
+                if hasattr(active_view, 'save_document'):
+                    active_view.save_document(silent=True)
+                    # The save_document method should now clear its own is_modified flag.
+            else:
+                # Optionally, could save new, unsaved documents to a temp/autosave location
+                # For now, we skip auto-saving new, unnamed documents.
+                print(f"Auto-save skipped for new/unsaved document: {active_view.document.name}")
+        else:
+            print("Auto-save: No active, modified document with a path to save.")
+
 
     def _apply_initial_styling(self):
         """Applies styling to the current tab when the app starts."""
         current_index = self.tab_widget.currentIndex()
         if current_index != -1:
             self._on_tab_changed(current_index)
+
+    def settings_updated(self):
+        """Called when settings are saved in SettingsView."""
+        self._update_auto_save_timer_interval()
+        # Also re-apply styling in case jurisdictional color setting changed
+        self._apply_initial_styling() # This calls _on_tab_changed for current tab
 
     def _on_tab_changed(self, index: int):
         """Applies styling based on jurisdiction when a tab is changed."""
@@ -194,20 +234,56 @@ class MainWindow(QMainWindow):
             widget.setStyleSheet(combined_stylesheet)
 
             # Show/Hide Jurisdiction Header Label based on settings
-            # This applies to document views that have this label
             if isinstance(widget, (TrustView, CharterView, DepositView)):
-                show_headers = self.settings_view.get_setting("show_jurisdiction_headers")
                 if hasattr(widget, 'jurisdiction_header_label'): # Check if the view has the label
-                    widget.jurisdiction_header_label.setVisible(show_headers)
-                # If the view itself is the one with the jurisdiction_header_label, then:
-                # widget.jurisdiction_header_label.setVisible(show_headers)
+                    # Ensure settings_view is initialized before accessing get_setting
+                    if hasattr(self, 'settings_view') and self.settings_view:
+                         show_headers = self.settings_view.get_setting("show_jurisdiction_headers")
+                         widget.jurisdiction_header_label.setVisible(show_headers)
+                    else: # Fallback if settings_view isn't ready (should not happen in normal flow)
+                        widget.jurisdiction_header_label.setVisible(True)
 
         elif widget: # For non-document tabs or if coloring is off and widget is not None
-             widget.setStyleSheet(default_stylesheet) # Apply default style
-             # Also hide jurisdiction header if it's a non-doc tab that might have had it visible from a previous doc tab
+             widget.setStyleSheet(default_stylesheet)
              if hasattr(widget, 'jurisdiction_header_label'):
                  widget.jurisdiction_header_label.setVisible(False)
 
+        # Update LedgerView with the current document if applicable
+        active_doc_view = self._get_active_document_view() # Get current doc view
+        if active_doc_view and hasattr(active_doc_view, 'document'):
+            self.ledger_view.set_document(active_doc_view.document)
+             # Update dashboard's current document display
+            if hasattr(self, 'dashboard_view'):
+                self.dashboard_view.update_current_document(
+                    active_doc_view.document.name,
+                    active_doc_view.document.jurisdiction
+                )
+        elif not isinstance(widget, (TrustView, CharterView, DepositView)): # if not a doc view
+            self.ledger_view.set_document(None) # Clear ledger if not a doc tab
+            if hasattr(self, 'dashboard_view'):
+                 self.dashboard_view.update_current_document(None, None)
+
+
+    def _get_active_document_view(self) -> QWidget | None:
+        """Helper to get the currently active document view if it's one of our known types."""
+        current_widget = self.tab_widget.currentWidget()
+        if isinstance(current_widget, (TrustView, CharterView, DepositView)):
+            return current_widget
+        return None
+
+    def _trigger_save_active_document(self):
+        active_view = self._get_active_document_view()
+        if active_view and hasattr(active_view, 'save_document'):
+            active_view.save_document()
+        else:
+            self.status_bar.showMessage("No active document to save or save not supported for this tab.", 3000)
+
+    def _trigger_save_as_active_document(self):
+        active_view = self._get_active_document_view()
+        if active_view and hasattr(active_view, 'save_document_as'):
+            active_view.save_document_as()
+        else:
+            self.status_bar.showMessage("No active document for 'Save As' or operation not supported.", 3000)
 
     def _upload_files_to_vault(self):
         """Allows user to select files and copies them to the Codex Vault uploads directory."""
@@ -355,8 +431,12 @@ class MainWindow(QMainWindow):
         file_menu.addAction(open_action)
 
         save_action = QAction("&Save", self)
-        # save_action.triggered.connect(self.save_file) # Placeholder
+        save_action.triggered.connect(self._trigger_save_active_document)
         file_menu.addAction(save_action)
+
+        save_as_action = QAction("Save &As...", self)
+        save_as_action.triggered.connect(self._trigger_save_as_active_document)
+        file_menu.addAction(save_as_action)
 
         file_menu.addSeparator() #---------------------------------------------
 
@@ -383,8 +463,11 @@ class MainWindow(QMainWindow):
         # View Menu (Placeholder)
         view_menu = self.menu_bar.addMenu("&View")
 
-        # Tools Menu (Placeholder)
+        # Tools Menu
         tools_menu = self.menu_bar.addMenu("&Tools")
+        manage_personal_info_action = QAction("Manage &Personal Info...", self)
+        manage_personal_info_action.triggered.connect(self._open_personal_info_manager)
+        tools_menu.addAction(manage_personal_info_action)
 
         # Help Menu
         help_menu = self.menu_bar.addMenu("&Help")

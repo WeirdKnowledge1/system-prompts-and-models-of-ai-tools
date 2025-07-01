@@ -5,12 +5,13 @@ from PyQt6.QtCore import Qt
 import json
 import os
 import datetime
+import uuid # Import uuid
 
 from app.core.document_models import MichaudSpecialDepositDocument
 from app.core.clause_model import Clause
 from app.ui.dialogs.edit_clause_dialog import EditClauseDialog
 from app.ui.dialogs.qr_display_dialog import QRDisplayDialog
-from app.core.agents import ClauseConformer, VeritasProof, DocumentTracker # Import DocumentTracker
+from app.core.agents import ClauseConformer, VeritasProof, DocumentTracker
 from app.utils.constants import CODEX_VAULT_DIR
 
 class DepositView(QWidget):
@@ -18,17 +19,34 @@ class DepositView(QWidget):
         super().__init__(parent)
         self.current_document_path = None
         self.document = MichaudSpecialDepositDocument(name="Untitled Michaud Special Deposit")
+        self.is_modified = False # Initialize is_modified flag
         self._setup_ui()
+        self._connect_modification_signals()
+
+    def _connect_modification_signals(self):
+        self.name_input.textChanged.connect(self._mark_as_modified)
+        self.jurisdiction_input.textChanged.connect(self._mark_as_modified)
+        self.source_validation_input.textChanged.connect(self._mark_as_modified)
+        self.beneficiary_alignment_input.textChanged.connect(self._mark_as_modified)
+        self.agent_signature_input.textChanged.connect(self._mark_as_modified)
+        self.notary_signature_input.textChanged.connect(self._mark_as_modified)
+        self.family_trust_ref_input.textChanged.connect(self._mark_as_modified)
+        self.postal_charter_ref_input.textChanged.connect(self._mark_as_modified)
+        self.foreign_trustee_act_input.textChanged.connect(self._mark_as_modified)
+        self.subrogate_practice_act_input.textChanged.connect(self._mark_as_modified)
+        self.manitoba_statutes_input.textChanged.connect(self._mark_as_modified)
+        # self.add_filed_doc_input.textChanged.connect(self._mark_as_modified) # Adding/removing items handles this
+
+    def _mark_as_modified(self, text=None):
+        self.is_modified = True
 
     def _setup_ui(self):
         main_layout = QVBoxLayout(self)
-
-        # --- Jurisdiction Header Label ---
         self.jurisdiction_header_label = QLabel("Jurisdiction: N/A")
         self.jurisdiction_header_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.jurisdiction_header_label.setStyleSheet("font-weight: bold; font-size: 11pt; padding: 5px; background-color: #E8E8E8; border-bottom: 1px solid #C0C0C0;")
         main_layout.addWidget(self.jurisdiction_header_label)
-
+        # ... (rest of _setup_ui as it was, including all groups and buttons) ...
         # Document Info Group
         doc_info_group = QGroupBox("Document Information")
         doc_info_layout = QGridLayout()
@@ -110,14 +128,11 @@ class DepositView(QWidget):
         deposit_specifics_group.setLayout(deposit_specifics_layout)
         main_layout.addWidget(deposit_specifics_group)
 
-        # Clauses Group
         clauses_group = QGroupBox("Clauses")
         clauses_layout = QVBoxLayout()
         self.clauses_list_widget = QListWidget()
         self.clauses_list_widget.itemSelectionChanged.connect(self.display_selected_clause_details)
         clauses_layout.addWidget(self.clauses_list_widget)
-
-        # Selected Clause Details Panel
         self.selected_clause_details_group = QGroupBox("Selected Clause Details")
         selected_clause_layout = QGridLayout()
         self.sel_clause_id_label = QLabel("ID:")
@@ -170,8 +185,6 @@ class DepositView(QWidget):
         self.selected_clause_details_group.setLayout(selected_clause_layout)
         self.selected_clause_details_group.setVisible(False)
         clauses_layout.addWidget(self.selected_clause_details_group)
-
-        # Clause Action Buttons
         clause_action_buttons_layout = QHBoxLayout()
         self.add_clause_button = QPushButton("Add New Clause")
         self.add_clause_button.clicked.connect(self.add_clause)
@@ -191,8 +204,6 @@ class DepositView(QWidget):
         clauses_layout.addLayout(clause_action_buttons_layout)
         clauses_group.setLayout(clauses_layout)
         main_layout.addWidget(clauses_group)
-
-        # File Operations
         file_ops_layout = QHBoxLayout()
         self.new_button = QPushButton("New Deposit Document")
         self.new_button.clicked.connect(self.new_document)
@@ -204,18 +215,20 @@ class DepositView(QWidget):
         file_ops_layout.addWidget(self.save_button)
         file_ops_layout.addWidget(self.load_button)
         main_layout.addLayout(file_ops_layout)
-
-        # Conformance Check Button
         self.conformance_check_button = QPushButton("Run Basic Conformance Check")
         self.conformance_check_button.clicked.connect(self.run_basic_conformance_check)
         main_layout.addWidget(self.conformance_check_button, alignment=Qt.AlignmentFlag.AlignLeft)
-
         main_layout.addStretch()
         self.load_document_data_into_ui()
 
+    def _update_document_jurisdiction(self, text: str):
+        self.document.jurisdiction = text
+        self.jurisdiction_header_label.setText(f"Document Jurisdiction: {text}")
+        self._mark_as_modified()
+
     def _collect_data_from_ui(self):
         self.document.name = self.name_input.text()
-        self.document.jurisdiction = self.jurisdiction_input.text()
+        # self.document.jurisdiction handled by _update_document_jurisdiction
         self.document.source_validation_details = self.source_validation_input.toPlainText()
         self.document.trust_beneficiary_alignment_notes = self.beneficiary_alignment_input.toPlainText()
         self.document.postal_equity_agent_signature_placeholder = self.agent_signature_input.text()
@@ -230,6 +243,7 @@ class DepositView(QWidget):
         self.name_input.setText(self.document.name)
         self.id_display.setText(self.document.id)
         self.jurisdiction_input.setText(self.document.jurisdiction)
+        self.jurisdiction_header_label.setText(f"Document Jurisdiction: {self.document.jurisdiction}")
         self.filed_docs_list_widget.clear()
         for item_dict in self.document.filed_documents:
             display_text = item_dict.get("doc_name", "Unnamed Document")
@@ -248,10 +262,8 @@ class DepositView(QWidget):
         self.clauses_list_widget.clear()
         for clause_obj in self.document.clauses:
             self.clauses_list_widget.addItem(str(clause_obj))
-
-        self.jurisdiction_header_label.setText(f"Document Jurisdiction: {self.document.jurisdiction}")
         self.display_selected_clause_details()
-
+        self.is_modified = False # Reset modified flag
         main_window_instance = self.window()
         if hasattr(main_window_instance, 'settings_view') and \
            hasattr(main_window_instance.settings_view, 'get_setting') and \
@@ -264,6 +276,7 @@ class DepositView(QWidget):
             self.document.filed_documents.append({"doc_name": doc_text, "details": ""})
             self.filed_docs_list_widget.addItem(doc_text)
             self.add_filed_doc_input.clear()
+            self._mark_as_modified()
         else:
             QMessageBox.warning(self, "Input Error", "Please enter text for the filed document.")
 
@@ -283,6 +296,7 @@ class DepositView(QWidget):
             if found_doc_to_remove is not None:
                 self.document.filed_documents.pop(found_doc_to_remove)
             del item
+            self._mark_as_modified()
         else:
             QMessageBox.warning(self, "Selection Error", "Please select a filed document to remove.")
 
@@ -293,9 +307,9 @@ class DepositView(QWidget):
                 doc_tracker.untrack_document(self.document.id)
             except Exception as e:
                 print(f"Error untracking deposit {self.document.id} in new_document: {e}")
-
         self.document = MichaudSpecialDepositDocument(name="Untitled Michaud Special Deposit")
         self.current_document_path = None
+        self.is_modified = False
         self.load_document_data_into_ui()
         QMessageBox.information(self, "New Document", "New Special Deposit document initialized.")
 
@@ -307,6 +321,7 @@ class DepositView(QWidget):
             self.clauses_list_widget.addItem(str(new_clause))
             self.clauses_list_widget.setCurrentRow(self.clauses_list_widget.count() - 1)
             QMessageBox.information(self, "Clause Added", f"Clause '{new_clause.id}' successfully added.")
+            self._mark_as_modified()
 
     def display_selected_clause_details(self):
         selected_items = self.clauses_list_widget.selectedItems()
@@ -364,6 +379,7 @@ class DepositView(QWidget):
                 self.clauses_list_widget.item(current_row).setText(str(updated_clause))
                 self.display_selected_clause_details()
                 QMessageBox.information(self, "Clause Updated", f"Clause '{updated_clause.id}' successfully updated.")
+                self._mark_as_modified()
         else:
             QMessageBox.warning(self, "Edit Clause", "No clause selected.")
 
@@ -380,34 +396,81 @@ class DepositView(QWidget):
                 self.clauses_list_widget.takeItem(current_row)
                 self.display_selected_clause_details()
                 QMessageBox.information(self, "Clause Removed", f"Clause {clause_obj.id} removed.")
+                self._mark_as_modified()
         else:
             QMessageBox.warning(self, "Remove Clause", "No clause selected.")
 
-    def save_document(self):
+    def save_document(self, silent=False):
         self._collect_data_from_ui()
-        if not self._validate_document_basic(): return
+        if not self._validate_document_basic():
+            if not silent: QMessageBox.warning(self, "Validation Failed", "Cannot save document due to validation errors.")
+            return False
         if not self.current_document_path:
-            deposit_dir = os.path.join(CODEX_VAULT_DIR, "deposits")
-            safe_filename = "".join(c if c.isalnum() or c in (' ', '_', '-') else '_' for c in self.document.name)
-            safe_filename = safe_filename.replace(' ', '_') + ".mpea_deposit"
-            filePath, _ = QFileDialog.getSaveFileName(
-                self, "Save Special Deposit Document",
-                os.path.join(deposit_dir, safe_filename),
-                "Michaud Postal Equity App Deposit Files (*.mpea_deposit);;All Files (*)")
-            if not filePath: return
-            self.current_document_path = filePath
+            return self.save_document_as(silent=silent)
         try:
             with open(self.current_document_path, 'w') as f:
                 json.dump(self.document.to_dict(), f, indent=4)
-            QMessageBox.information(self, "Save Successful", f"Special Deposit document saved to\n{self.current_document_path}")
+            if not silent:
+                QMessageBox.information(self, "Save Successful", f"Special Deposit document saved to\n{self.current_document_path}")
+            else:
+                main_window = self.window()
+                if hasattr(main_window, 'status_bar'):
+                    main_window.status_bar.showMessage(f"Auto-saved: {os.path.basename(self.current_document_path)}", 3000)
+            self.is_modified = False
             try:
                 doc_tracker = DocumentTracker(app_context=self.window())
                 doc_tracker.track_document_change(self.document.id, self.document.to_dict())
             except Exception as e:
                 print(f"Error tracking deposit change for {self.document.id}: {e}")
+            return True
         except Exception as e:
-            QMessageBox.critical(self, "Save Error", f"Could not save document: {e}")
-            self.current_document_path = None
+            if not silent: QMessageBox.critical(self, "Save Error", f"Could not save document: {e}")
+            else: print(f"Auto-save error for {self.current_document_path}: {e}")
+            return False
+
+    def save_document_as(self, silent=False):
+        self._collect_data_from_ui()
+        if not self._validate_document_basic():
+            if not silent: QMessageBox.warning(self, "Validation Failed", "Cannot save document due to validation errors.")
+            return False
+        deposit_dir = os.path.join(CODEX_VAULT_DIR, "deposits")
+        safe_default_filename = "".join(c if c.isalnum() or c in (' ', '_', '-') else '_' for c in self.document.name)
+        safe_default_filename = safe_default_filename.replace(' ', '_') + ".mpea_deposit"
+        filePath, _ = QFileDialog.getSaveFileName(
+            self, "Save Special Deposit Document As...",
+            os.path.join(deposit_dir, safe_default_filename),
+            "Michaud Postal Equity App Deposit Files (*.mpea_deposit);;All Files (*)")
+        if not filePath: return False
+        if self.current_document_path and hasattr(self.document, 'id'):
+            try:
+                old_doc_id = self.document.id
+                doc_tracker = DocumentTracker(app_context=self.window())
+                doc_tracker.untrack_document(old_doc_id)
+            except Exception as e:
+                print(f"Error untracking old deposit {old_doc_id} during Save As: {e}")
+        self.current_document_path = filePath
+        self.document.id = str(uuid.uuid4())
+        self.id_display.setText(self.document.id)
+        try:
+            with open(self.current_document_path, 'w') as f:
+                json.dump(self.document.to_dict(), f, indent=4)
+            if not silent:
+                QMessageBox.information(self, "Save As Successful", f"Special Deposit document saved to\n{self.current_document_path}")
+            else:
+                main_window = self.window()
+                if hasattr(main_window, 'status_bar'):
+                    main_window.status_bar.showMessage(f"Auto-saved (as new): {os.path.basename(self.current_document_path)}", 3000)
+            self.is_modified = False
+            try:
+                doc_tracker = DocumentTracker(app_context=self.window())
+                doc_tracker.track_document_open(self.document.id, self.current_document_path, self.document.to_dict())
+            except Exception as e:
+                print(f"Error tracking deposit after Save As for {self.document.id}: {e}")
+            return True
+        except Exception as e:
+            if not silent: QMessageBox.critical(self, "Save As Error", f"Could not save document: {e}")
+            else: print(f"Auto-save (as new) error for {self.current_document_path}: {e}")
+            return False
 
     def load_document(self):
         if self.current_document_path and hasattr(self.document, 'id'):
@@ -416,7 +479,6 @@ class DepositView(QWidget):
                 doc_tracker.untrack_document(self.document.id)
             except Exception as e:
                 print(f"Error untracking deposit {self.document.id} before load: {e}")
-
         deposit_dir = os.path.join(CODEX_VAULT_DIR, "deposits")
         filePath, _ = QFileDialog.getOpenFileName(
             self, "Load Special Deposit Document", deposit_dir,
@@ -426,6 +488,7 @@ class DepositView(QWidget):
             with open(filePath, 'r') as f: doc_data = json.load(f)
             self.document = MichaudSpecialDepositDocument.from_dict(doc_data)
             self.current_document_path = filePath
+            self.is_modified = False
             self.load_document_data_into_ui()
             QMessageBox.information(self, "Load Successful", f"Special Deposit document loaded from\n{filePath}")
             try:
@@ -444,6 +507,7 @@ class DepositView(QWidget):
             item = self.clauses_list_widget.takeItem(current_row)
             self.clauses_list_widget.insertItem(current_row - 1, item)
             self.clauses_list_widget.setCurrentRow(current_row - 1)
+            self._mark_as_modified()
 
     def move_clause_down(self):
         current_row = self.clauses_list_widget.currentRow()
@@ -453,6 +517,7 @@ class DepositView(QWidget):
             item = self.clauses_list_widget.takeItem(current_row)
             self.clauses_list_widget.insertItem(current_row + 1, item)
             self.clauses_list_widget.setCurrentRow(current_row + 1)
+            self._mark_as_modified()
 
     def _generate_clause_qr_code(self):
         current_row = self.clauses_list_widget.currentRow()
@@ -519,8 +584,3 @@ if __name__ == '__main__':
     deposit_view.setGeometry(100,100, 800, 800)
     deposit_view.show()
     sys.exit(app.exec())
-
-    def _update_document_jurisdiction(self, text: str):
-        """Updates the document model's jurisdiction and the header label."""
-        self.document.jurisdiction = text
-        self.jurisdiction_header_label.setText(f"Document Jurisdiction: {text}")

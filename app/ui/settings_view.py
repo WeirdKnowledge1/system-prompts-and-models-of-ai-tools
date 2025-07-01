@@ -8,8 +8,9 @@ import os
 SETTINGS_FILE_PATH = os.path.join("data", "app_settings.json")
 
 class SettingsView(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, main_window=None, parent=None): # Added main_window
         super().__init__(parent)
+        self.main_window = main_window # Store reference
         self.settings = self._load_settings()
         self._setup_ui()
 
@@ -26,10 +27,12 @@ class SettingsView(QWidget):
             "jurisdictional_colors_enabled": True,
             "permit_live_clause_editing": False,
             "show_jurisdiction_headers": True,
-            "zip_rewrite_ai_logic_enabled": False, # New
-            "auto_validate_codex_memory": True,    # New
-            "allow_clause_conversion": True,       # New
-            "local_archive_source_uploads": True   # New
+            "zip_rewrite_ai_logic_enabled": False,
+            "auto_validate_codex_memory": True,
+            "allow_clause_conversion": True,
+            "local_archive_source_uploads": True,
+            "auto_save_enabled": True,             # New for Auto-Save
+            "auto_save_interval_minutes": 5        # New for Auto-Save
             # Add other settings from the full list in Part II.A.1 with defaults
         }
 
@@ -59,6 +62,8 @@ class SettingsView(QWidget):
             with open(SETTINGS_FILE_PATH, 'w') as f:
                 json.dump(self.settings, f, indent=4)
             QMessageBox.information(self, "Settings Saved", "Application settings have been saved.")
+            if self.main_window and hasattr(self.main_window, 'settings_updated'):
+                self.main_window.settings_updated() # Notify main window
         except Exception as e:
             QMessageBox.critical(self, "Error Saving Settings", f"Could not save settings: {e}")
 
@@ -237,6 +242,27 @@ class SettingsView(QWidget):
         )
         codex_vault_layout.addWidget(self.local_archive_uploads_checkbox, 0, 0)
         codex_vault_layout.addWidget(QLabel("Keeps a local copy of all uploaded source files."), 0, 1)
+
+        # Auto-Save settings
+        self.enable_auto_save_checkbox = QCheckBox("Enable Auto-Save")
+        self.enable_auto_save_checkbox.setToolTip("Automatically saves the active document at regular intervals.")
+        self.enable_auto_save_checkbox.setChecked(self.settings.get("auto_save_enabled", True))
+        self.enable_auto_save_checkbox.stateChanged.connect(
+            lambda state: self.settings.update({"auto_save_enabled": state == Qt.CheckState.Checked.value})
+        )
+        codex_vault_layout.addWidget(self.enable_auto_save_checkbox, 1, 0)
+
+        self.auto_save_interval_label = QLabel("Auto-Save Interval (minutes):")
+        codex_vault_layout.addWidget(self.auto_save_interval_label, 2, 0)
+        self.auto_save_interval_spinbox = QSpinBox()
+        self.auto_save_interval_spinbox.setMinimum(1)
+        self.auto_save_interval_spinbox.setMaximum(60) # Max 1 hour interval
+        self.auto_save_interval_spinbox.setValue(self.settings.get("auto_save_interval_minutes", 5))
+        self.auto_save_interval_spinbox.valueChanged.connect(
+            lambda value: self.settings.update({"auto_save_interval_minutes": value})
+        )
+        codex_vault_layout.addWidget(self.auto_save_interval_spinbox, 2, 1)
+
 
         codex_vault_group.setLayout(codex_vault_layout)
         settings_layout.addWidget(codex_vault_group)

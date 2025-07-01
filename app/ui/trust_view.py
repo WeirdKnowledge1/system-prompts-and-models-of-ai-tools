@@ -5,6 +5,7 @@ from PyQt6.QtCore import Qt
 import json
 import os
 import datetime
+import uuid # Import uuid for new document IDs
 
 from app.core.document_models import MichaudFamilyTrust
 from app.core.clause_model import Clause
@@ -17,8 +18,34 @@ class TrustView(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.current_document_path = None
-        self.document = MichaudFamilyTrust(name="Untitled Michaud Family Trust") # Default empty document
+        self.document = MichaudFamilyTrust(name="Untitled Michaud Family Trust")
+        self.is_modified = False # Initialize is_modified flag
         self._setup_ui()
+        self._connect_modification_signals()
+
+
+    def _connect_modification_signals(self):
+        """Connects UI elements' change signals to set the is_modified flag."""
+        # Connect textChanged for QLineEdits
+        self.name_input.textChanged.connect(self._mark_as_modified)
+        self.jurisdiction_input.textChanged.connect(self._mark_as_modified)
+        self.settlors_input.textChanged.connect(self._mark_as_modified)
+        self.trustees_input.textChanged.connect(self._mark_as_modified)
+        self.beneficiaries_input.textChanged.connect(self._mark_as_modified)
+        # Connect textChanged for QTextEdits
+        self.land_rights_input.textChanged.connect(self._mark_as_modified)
+        self.name_control_input.textChanged.connect(self._mark_as_modified)
+        self.mortgage_recon_input.textChanged.connect(self._mark_as_modified)
+        # For QListWidget (clauses), modification is handled by add/remove/edit methods
+        # For QComboBox, use currentIndexChanged
+
+    def _mark_as_modified(self, text=None): # text arg to match signal, not always used
+        self.is_modified = True
+        # Optional: update window title to indicate unsaved changes, e.g., append "*"
+        # parent_window = self.window()
+        # if parent_window and not parent_window.windowTitle().endswith("*"):
+        #     parent_window.setWindowTitle(parent_window.windowTitle() + "*")
+
 
     def _setup_ui(self):
         main_layout = QVBoxLayout(self)
@@ -269,6 +296,7 @@ class TrustView(QWidget):
 
         self.document = MichaudFamilyTrust(name="Untitled Michaud Family Trust")
         self.current_document_path = None
+        self.is_modified = False # New document is not modified initially
         self.load_document_data_into_ui() # This will also trigger auto-conformance if enabled
         QMessageBox.information(self, "New Document", "New Trust document initialized.")
 
@@ -297,6 +325,7 @@ class TrustView(QWidget):
             self.clauses_list_widget.setCurrentRow(self.clauses_list_widget.count() - 1) # Select the new item
             QMessageBox.information(self, "Clause Added", f"Clause '{new_clause.id}' successfully added.")
             # Potentially update document's last_modified_date and version here or in document model
+            self._mark_as_modified()
 
     def display_selected_clause_details(self):
         selected_items = self.clauses_list_widget.selectedItems()
@@ -375,7 +404,7 @@ class TrustView(QWidget):
                 self.clauses_list_widget.item(current_row).setText(str(updated_clause)) # Update in UI list
                 self.display_selected_clause_details() # Refresh details panel
                 QMessageBox.information(self, "Clause Updated", f"Clause '{updated_clause.id}' successfully updated.")
-                # Potentially update document's last_modified_date and version
+                self._mark_as_modified()
             # else: User cancelled
         else:
             QMessageBox.warning(self, "Edit Clause", "No clause selected to edit.")
@@ -394,48 +423,124 @@ class TrustView(QWidget):
                 self.clauses_list_widget.takeItem(current_row) # Remove from UI list
                 self.display_selected_clause_details() # Clear/update details panel
                 QMessageBox.information(self, "Clause Removed", f"Clause {clause_obj.id} removed.")
+                self._mark_as_modified()
         else:
             QMessageBox.warning(self, "Remove Clause", "No clause selected to remove.")
 
-
-    def save_document(self):
-        self._collect_data_from_ui() # Ensure document object is up-to-date with UI text fields
+    def save_document(self, silent=False): # Added silent flag for auto-save
+        self._collect_data_from_ui()
 
         if not self._validate_document_basic():
-            return
+            if not silent: # Only show validation popup for manual save
+                 QMessageBox.warning(self, "Validation Failed", "Cannot save document due to validation errors.")
+            return False # Indicate save failed
 
         if not self.current_document_path:
-            # Document is new or path is lost, prompt for save location
-            trust_dir = os.path.join(CODEX_VAULT_DIR, "trusts")
-            # Sanitize document name for use as filename
-            safe_filename = "".join(c if c.isalnum() or c in (' ', '_', '-') else '_' for c in self.document.name)
-            safe_filename = safe_filename.replace(' ', '_') + ".mpea_trust" # Custom extension
-
-            filePath, _ = QFileDialog.getSaveFileName(
-                self,
-                "Save Trust Document",
-                os.path.join(trust_dir, safe_filename),
-                "Michaud Postal Equity App Trust Files (*.mpea_trust);;All Files (*)"
-            )
-            if not filePath:
-                return
-            self.current_document_path = filePath
+            # If no path, this is effectively a "Save As" situation for a new doc
+            # or if user explicitly chose "Save" on a new doc.
+            return self.save_document_as(silent=silent) # Pass silent flag
 
         try:
             with open(self.current_document_path, 'w') as f:
                 json.dump(self.document.to_dict(), f, indent=4)
-            QMessageBox.information(self, "Save Successful", f"Trust document saved to\n{self.current_document_path}")
 
-            # Track document change after successful save
+            if not silent:
+                QMessageBox.information(self, "Save Successful", f"Trust document saved to\n{self.current_document_path}")
+            else: # For auto-save, maybe a status bar message
+                main_window = self.window()
+                if hasattr(main_window, 'status_bar'):
+                    main_window.status_bar.showMessage(f"Auto-saved: {os.path.basename(self.current_document_path)}", 3000)
+
+            self.is_modified = False # Clear modified flag
+            # Update window title if it had "*"
+            # parent_window = self.window()
+            # if parent_window and parent_window.windowTitle().endswith("*"):
+            #    parent_window.setWindowTitle(parent_window.windowTitle()[:-1])
+
             try:
                 doc_tracker = DocumentTracker(app_context=self.window())
                 doc_tracker.track_document_change(self.document.id, self.document.to_dict())
             except Exception as e:
                 print(f"Error tracking document change for {self.document.id}: {e}")
+            return True # Indicate save success
 
         except Exception as e:
-            QMessageBox.critical(self, "Save Error", f"Could not save document: {e}")
-            self.current_document_path = None # Reset path if save failed
+            if not silent:
+                QMessageBox.critical(self, "Save Error", f"Could not save document: {e}")
+            else:
+                print(f"Auto-save error for {self.current_document_path}: {e}")
+            # self.current_document_path = None # Don't reset path on failed save, user might want to retry
+            return False # Indicate save failed
+
+    def save_document_as(self, silent=False): # Added silent flag
+        self._collect_data_from_ui()
+        if not self._validate_document_basic():
+            if not silent:
+                QMessageBox.warning(self, "Validation Failed", "Cannot save document due to validation errors.")
+            return False
+
+        trust_dir = os.path.join(CODEX_VAULT_DIR, "trusts")
+        safe_default_filename = "".join(c if c.isalnum() or c in (' ', '_', '-') else '_' for c in self.document.name)
+        safe_default_filename = safe_default_filename.replace(' ', '_') + ".mpea_trust"
+
+        filePath, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Trust Document As...",
+            os.path.join(trust_dir, safe_default_filename),
+            "Michaud Postal Equity App Trust Files (*.mpea_trust);;All Files (*)"
+        )
+        if not filePath:
+            return False # User cancelled
+
+        # "Save As" implies a new identity for this specific file instance if we want to avoid
+        # the original DocumentTracker entry being overwritten by saves to a new file.
+        # For now, we'll generate a new ID for the document object in this view context.
+        # The old document (if any) remains unchanged in its original file or memory until replaced.
+
+        # Untrack the old ID if it was being tracked from a specific path
+        if self.current_document_path and hasattr(self.document, 'id'):
+            try:
+                old_doc_id = self.document.id
+                doc_tracker = DocumentTracker(app_context=self.window())
+                doc_tracker.untrack_document(old_doc_id) # Untrack by old ID
+            except Exception as e:
+                print(f"Error untracking old document {old_doc_id} during Save As: {e}")
+
+        self.current_document_path = filePath
+        self.document.id = str(uuid.uuid4()) # Generate new ID for this "copy"
+        self.id_display.setText(self.document.id) # Update UI
+        # Also update document name in UI if it's part of the filename potentially
+        # self.name_input.setText(os.path.basename(filePath).replace(".mpea_trust","")) # Optional
+
+        try:
+            with open(self.current_document_path, 'w') as f:
+                json.dump(self.document.to_dict(), f, indent=4)
+
+            if not silent:
+                QMessageBox.information(self, "Save As Successful", f"Trust document saved to\n{self.current_document_path}")
+            else:
+                main_window = self.window()
+                if hasattr(main_window, 'status_bar'):
+                    main_window.status_bar.showMessage(f"Auto-saved (as new): {os.path.basename(self.current_document_path)}", 3000)
+
+            self.is_modified = False
+            # Update window title if necessary
+
+            # Track this new document ID and path
+            try:
+                doc_tracker = DocumentTracker(app_context=self.window())
+                # Use track_document_open as it's now a new file path being tracked with a new/potentially new ID context
+                doc_tracker.track_document_open(self.document.id, self.current_document_path, self.document.to_dict())
+            except Exception as e:
+                print(f"Error tracking document after Save As for {self.document.id}: {e}")
+            return True
+        except Exception as e:
+            if not silent:
+                QMessageBox.critical(self, "Save As Error", f"Could not save document: {e}")
+            else:
+                print(f"Auto-save (as new) error for {self.current_document_path}: {e}")
+            return False
+
 
     def load_document(self):
         # If a document is already loaded, untrack it first
@@ -463,6 +568,7 @@ class TrustView(QWidget):
             # Use the from_dict method of the specific class
             self.document = MichaudFamilyTrust.from_dict(doc_data)
             self.current_document_path = filePath
+            self.is_modified = False # Loaded document is initially not modified
             self.load_document_data_into_ui() # This will also trigger auto-conformance if enabled
             QMessageBox.information(self, "Load Successful", f"Trust document loaded from\n{filePath}")
 
