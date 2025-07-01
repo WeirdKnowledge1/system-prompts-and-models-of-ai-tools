@@ -171,8 +171,14 @@ class TrustView(QWidget):
         selected_clause_layout.addWidget(self.sel_clause_modified_value, 10, 1)
         self.sel_clause_version_label = QLabel("Version:")
         self.sel_clause_version_value = QLabel("")
-        selected_clause_layout.addWidget(self.sel_clause_version_label, 11, 0) # Adjusted row
+        selected_clause_layout.addWidget(self.sel_clause_version_label, 11, 0)
         selected_clause_layout.addWidget(self.sel_clause_version_value, 11, 1)
+
+        self.sel_clause_lock_status_label = QLabel("Status:") # New
+        self.sel_clause_lock_status_value = QLabel("")      # New
+        selected_clause_layout.addWidget(self.sel_clause_lock_status_label, 12, 0) # New row
+        selected_clause_layout.addWidget(self.sel_clause_lock_status_value, 12, 1) # New row
+
         buttons_sel_clause_layout = QHBoxLayout()
         self.edit_selected_clause_button = QPushButton("Edit Selected Clause")
         self.edit_selected_clause_button.setEnabled(False)
@@ -257,11 +263,27 @@ class TrustView(QWidget):
         for i, clause_obj in enumerate(self.document.clauses):
             display_number = display_numbers[i] if i < len(display_numbers) else "Err!"
             item_text = f"{display_number} {str(clause_obj)}"
-            if clause_obj.section_title: # If clause has a section title, make it more prominent in list
-                item_text = f"{display_number}" # Numbering function already includes title
+            # The str(clause_obj) now includes the lock icon if locked.
+            # If it's a section title, the numbering function handles the title.
+            if clause_obj.section_title and display_number.endswith(clause_obj.section_title):
+                 # Avoid duplicating title if numbering function already includes it.
+                 # The __str__ will just be (jurisdiction) and potentially truncated text.
+                 # For section titles, the display_number is dominant.
+                 item_text = f"{display_number}" # Numbering function includes title
 
             item = QListWidgetItem(item_text)
             item.setData(Qt.ItemDataRole.UserRole, clause_obj.id)
+
+            if clause_obj.is_locked:
+                # Set text color to a muted red or grey to indicate locked status
+                # This requires from PyQt6.QtGui import QColor
+                # For simplicity, let's assume QColor is available or do it later.
+                # item.setForeground(QColor("red")) # Example, might need QBrush
+                # A simpler visual cue might be to just rely on the lock icon from __str__ for now
+                # and the details panel.
+                # For now, the 🔒 icon from __str__ is the primary list indicator.
+                pass # Rely on 🔒 from __str__ for now
+
             self.clauses_list_widget.addItem(item)
             if clause_obj.id == current_selected_id:
                 new_selected_row = i
@@ -283,6 +305,8 @@ class TrustView(QWidget):
         self.land_rights_input.setPlainText(self.document.land_rights_details)
         self.name_control_input.setPlainText(self.document.name_control_details)
         self.mortgage_recon_input.setPlainText(self.document.equitable_mortgage_reconciliation_details)
+        self.postal_charter_ref_input.setText(self.document.postal_charter_ref or "")
+        self.special_deposit_ref_input.setText(self.document.special_deposit_ref or "")
 
         self._refresh_clause_list_display()
         self.is_modified = False
@@ -343,10 +367,13 @@ class TrustView(QWidget):
                 except ValueError: modified_date = clause_obj.last_modified_date
                 self.sel_clause_modified_value.setText(modified_date)
                 self.sel_clause_version_value.setText(str(clause_obj.version))
+                self.sel_clause_lock_status_value.setText("🔒 Locked" if clause_obj.is_locked else "✏️ Editable")
 
                 self.selected_clause_details_group.setVisible(True)
-                self.edit_selected_clause_button.setEnabled(True)
-                self.remove_clause_button.setEnabled(True)
+                # Edit button enabled only if clause is not locked.
+                # The EditClauseDialog itself will also enforce read-only for most fields if opened for a locked clause.
+                self.edit_selected_clause_button.setEnabled(True) # Dialog handles if locked. Or: .setEnabled(not clause_obj.is_locked)
+                self.remove_clause_button.setEnabled(True) # Allow removing locked clauses for now, can be changed
                 self.move_clause_up_button.setEnabled(current_row > 0)
                 self.move_clause_down_button.setEnabled(current_row < self.clauses_list_widget.count() - 1)
                 main_window_instance = self.window()

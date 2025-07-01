@@ -58,7 +58,15 @@ class EditClauseDialog(QDialog):
         self.section_title_edit.setToolTip("If this clause starts a new named section, enter its title here.")
         form_layout.addRow(QLabel("Section Title (Optional):"), self.section_title_edit)
 
+        # Lock Checkbox
+        self.lock_checkbox = QCheckBox("Lock this clause (prevents edits)")
+        self.lock_checkbox.setToolTip("When locked, clause fields (text, jurisdiction, etc.) cannot be modified.")
+        self.lock_checkbox.stateChanged.connect(self._on_lock_changed)
+        # Add it after the form_layout, but before the button_box for better placement
+        # Or, as a simple row in the form layout if preferred. Let's try as a separate widget below the form.
+
         main_layout.addLayout(form_layout)
+        main_layout.addWidget(self.lock_checkbox) # Add checkbox below the form
 
         # Dialog Buttons (Save, Cancel)
         self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
@@ -83,10 +91,27 @@ class EditClauseDialog(QDialog):
             self.purpose_type_edit.setText(self.clause.metadata.get("purpose_type", ""))
             self.level_spinbox.setValue(self.clause.level if hasattr(self.clause, 'level') else 1)
             self.section_title_edit.setText(self.clause.section_title if hasattr(self.clause, 'section_title') else "")
+            self.lock_checkbox.setChecked(self.clause.is_locked if hasattr(self.clause, 'is_locked') else False)
+            self._on_lock_changed(self.lock_checkbox.checkState().value) # Apply initial field disabled state
         else: # For new clause, set defaults
-            self.level_spinbox.setValue(1) # Default level
+            self.level_spinbox.setValue(1)
             self.jurisdiction_combo.setCurrentText(self.default_jurisdiction)
+            self.lock_checkbox.setChecked(False) # New clauses are unlocked by default
+            self._on_lock_changed(Qt.CheckState.Unchecked.value)
 
+
+    def _on_lock_changed(self, state):
+        locked = (state == Qt.CheckState.Checked.value)
+        # Disable/Enable fields based on lock state
+        # The lock_checkbox itself should always be enabled.
+        self.text_edit.setReadOnly(locked)
+        self.jurisdiction_combo.setEnabled(not locked)
+        self.origin_edit.setReadOnly(locked)
+        self.purpose_type_edit.setReadOnly(locked)
+        self.level_spinbox.setReadOnly(locked) # QSpinBox uses setReadOnly
+        self.section_title_edit.setReadOnly(locked)
+        # The Save button might also be contextually enabled/disabled or its text changed,
+        # but for now, it just saves the lock state.
 
     def _apply_changes_to_clause(self):
         """Applies changes from dialog fields back to the self.clause object."""
@@ -102,6 +127,8 @@ class EditClauseDialog(QDialog):
             self.clause.metadata["purpose_type"] = purpose_type
         elif "purpose_type" in self.clause.metadata:
             del self.clause.metadata["purpose_type"]
+
+        self.clause.set_lock_status(self.lock_checkbox.isChecked()) # Update lock status in model
 
         # ID is handled by constructor for new, or preserved for existing.
         # Version and dates are handled by Clause model itself or by document save logic.

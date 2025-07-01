@@ -21,79 +21,113 @@ def generate_display_clause_numbers(clauses: List['Clause']) -> List[str]:
         return display_numbers
 
     # Counters for different levels. Max 5 levels for this example.
-    # counters[0] is for level 1, counters[1] for level 2, etc.
-    counters = [0] * 5
+    # Max depth for numbering, can be adjusted.
+    MAX_LEVELS = 5
+    counters = [0] * MAX_LEVELS
 
-    # Roman numerals for top-level sections if they have titles
-    roman_map = {1: "I", 2: "II", 3: "III", 4: "IV", 5: "V",
-                 6: "VI", 7: "VII", 8: "VIII", 9: "IX", 10: "X"} # Extend as needed
+    # Helper to get Roman numerals
+    def to_roman(num):
+        roman_map = { 1: 'I', 4: 'IV', 5: 'V', 9: 'IX', 10: 'X', 40: 'XL', 50: 'L',
+                      90: 'XC', 100: 'C', 400: 'XD', 500: 'D', 900: 'CM', 1000: 'M'}
+        integers = list(roman_map)
+        symbols = list(roman_map.values())
+        i = 12
+        result = ""
+        while num != 0:
+            if integers[i] <= num:
+                result += symbols[i]
+                num -= integers[i]
+            else:
+                i -= 1
+        return result if result else str(num) # Fallback to num if not in map or 0
 
-    current_level_1_is_roman = False
+    # Helper to get Alpha characters (A, B, ...)
+    def to_alpha(num):
+        if num <= 0 or num > 26: return str(num) # Fallback for out of range
+        return chr(ord('A') + num - 1)
+
+    # Helper to get lowercase alpha characters (a, b, ...)
+    def to_lower_alpha(num):
+        if num <= 0 or num > 26: return str(num)
+        return chr(ord('a') + num - 1)
+
+    # Helper to get lowercase roman numerals (i, ii, ...)
+    def to_lower_roman(num):
+        return to_roman(num).lower()
+
+    # Define numbering scheme per level:
+    # Level 1: SECTION I / 1.
+    # Level 2: A. / 1.1.
+    # Level 3: 1. / 1.1.1.
+    # Level 4: a. / 1.1.1.1.
+    # Level 5: i. / 1.1.1.1.1.
+    # This scheme prioritizes SECTION/A/1/a/i if a section_title is present at that level,
+    # otherwise uses dotted numeric.
+
+    last_level_had_title = [False] * MAX_LEVELS # Track if the parent level was a titled section
 
     for clause in clauses:
-        level_idx = clause.level - 1 # 0-indexed
+        level_idx = clause.level - 1
 
-        if level_idx < 0 or level_idx >= len(counters):
-            display_numbers.append("ErrLvl!") # Error for invalid level
+        if level_idx < 0 or level_idx >= MAX_LEVELS:
+            display_numbers.append("ErrLvl!")
             continue
 
+        # Increment counter for the current level
+        counters[level_idx] += 1
+
+        # Reset counters for deeper levels
+        for i in range(level_idx + 1, MAX_LEVELS):
+            counters[i] = 0
+            last_level_had_title[i] = False # Reset title status for deeper levels
+
+        current_number_str = ""
         if clause.section_title:
+            last_level_had_title[level_idx] = True
             if clause.level == 1:
-                counters[level_idx] += 1
-                # Reset deeper levels
-                for i in range(level_idx + 1, len(counters)):
-                    counters[i] = 0
-                current_number_str = roman_map.get(counters[level_idx], str(counters[level_idx]))
-                display_numbers.append(f"SECTION {current_number_str}: {clause.section_title}")
-                current_level_1_is_roman = True # Subsequent level 2s will be A, B if under Roman
-            elif clause.level == 2: # Sub-section with title (e.g., A. Title)
-                counters[level_idx] += 1
-                for i in range(level_idx + 1, len(counters)):
-                    counters[i] = 0
-                # Use A, B, C for level 2 if under a Roman numeral section, or if it's the first type of L2
-                # This logic can be refined. For now, always A, B, C for titled L2.
-                section_char = chr(ord('A') + counters[level_idx] - 1)
-                parent_num_parts = [str(counters[i]) for i in range(level_idx) if counters[i] > 0]
-                if current_level_1_is_roman and level_idx > 0: # If parent was Roman, don't prepend its number
-                     parent_prefix = ""
-                else:
-                     parent_prefix = ".".join(parent_num_parts) + "." if parent_num_parts else ""
+                current_number_str = f"SECTION {to_roman(counters[level_idx])}: {clause.section_title}"
+            elif clause.level == 2:
+                current_number_str = f"{to_alpha(counters[level_idx])}. {clause.section_title}"
+            elif clause.level == 3: # Titled level 3, use numeric
+                current_number_str = f"{counters[level_idx]}. {clause.section_title}"
+            elif clause.level == 4: # Titled level 4, use lower alpha
+                current_number_str = f"{to_lower_alpha(counters[level_idx])}. {clause.section_title}"
+            elif clause.level == 5: # Titled level 5, use lower roman
+                current_number_str = f"{to_lower_roman(counters[level_idx])}. {clause.section_title}"
+            else: # Fallback for deeper titled sections
+                num_parts = [str(counters[i]) for i in range(level_idx + 1)]
+                current_number_str = ".".join(num_parts) + f" {clause.section_title}"
+        else: # No section title, standard outline numbering
+            last_level_had_title[level_idx] = False
+            # Build number based on parent context
+            if clause.level == 1: # 1., 2.
+                current_number_str = f"{counters[level_idx]}."
+            elif clause.level == 2: # I.A. or 1.A. (if parent L1 had title) or 1.1.
+                if level_idx > 0 and last_level_had_title[level_idx-1] and counters[level_idx-1]>0 : # Check if L1 was titled
+                    if clause.level == 1: # Should not happen due to level_idx > 0
+                         parent_prefix = ""
+                    elif counters[0] <= 10: # Roman for L1
+                         parent_prefix = f"{to_roman(counters[0])}."
+                    else: # Numeric for L1 if > X
+                         parent_prefix = f"{counters[0]}."
+                    current_number_str = f"{parent_prefix}{to_alpha(counters[level_idx])}."
+                else: # Dotted numeric 1.1., 1.2.
+                    current_number_str = f"{counters[0]}.{counters[level_idx]}."
+            elif clause.level == 3: # I.A.1. or 1.A.1. or 1.1.1.
+                # Simplified: always dotted numeric for L3+ if no title
+                num_parts = [str(counters[i]) for i in range(level_idx + 1)]
+                current_number_str = ".".join(num_parts) + "."
+            elif clause.level == 4:
+                num_parts = [str(counters[i]) for i in range(level_idx + 1)]
+                current_number_str = ".".join(num_parts) + "."
+            elif clause.level == 5:
+                num_parts = [str(counters[i]) for i in range(level_idx + 1)]
+                current_number_str = ".".join(num_parts) + "."
+            else: # Fallback for deeper levels
+                num_parts = [str(counters[i]) for i in range(level_idx + 1)]
+                current_number_str = ".".join(num_parts) + "."
 
-                # display_numbers.append(f"{parent_prefix}{section_char}. {clause.section_title}")
-                # Simplified for now: just "A. Section Title"
-                display_numbers.append(f"{section_char}. {clause.section_title}")
-
-
-            else: # Section titles at deeper levels just get standard numbering
-                counters[level_idx] += 1
-                for i in range(level_idx + 1, len(counters)):
-                    counters[i] = 0
-                num_parts = [str(counters[i]) for i in range(level_idx + 1) if counters[i] > 0 or i <= level_idx]
-                display_numbers.append(".".join(num_parts) + f" {clause.section_title}")
-
-        else: # No section title, just a numbered clause
-            counters[level_idx] += 1
-            # Reset deeper levels only if this is not the deepest level being incremented
-            # e.g. if we go from 1.1 to 1.2, 1.1.x should reset. If we go from 1.1 to 2.1, 1.x.x should reset.
-            # This is implicitly handled if a higher level section_title resets them.
-            # If no section titles, this simple counter logic works per level.
-            for i in range(level_idx + 1, len(counters)):
-                 counters[i] = 0
-
-            num_parts = []
-            if current_level_1_is_roman and clause.level > 1: # If under a Roman section
-                num_parts.append(roman_map.get(counters[0], str(counters[0])))
-                if clause.level == 2: # A, B, C for level 2 items under Roman
-                    num_parts.append(chr(ord('a') + counters[1] -1)) # a,b,c
-                elif clause.level > 2: # 1,2,3 for deeper levels
-                    for i in range(2, level_idx + 1):
-                         num_parts.append(str(counters[i]))
-            else: # Standard numeric hierarchy
-                for i in range(level_idx + 1):
-                    num_parts.append(str(counters[i]))
-
-            display_numbers.append(".".join(num_parts) + ".")
-            if clause.level == 1 : current_level_1_is_roman = False # Reset if we start a new numeric L1
+        display_numbers.append(current_number_str)
 
     return display_numbers
 

@@ -16,26 +16,39 @@ class Clause:
         self.last_modified_date = self.creation_date
         self.version = 1
         self.metadata = {}
-        self.level = max(1, level) # Ensure level is at least 1
+        self.level = max(1, level)
         self.section_title = section_title
+        self.is_locked = False # New attribute for clause lock
 
     def update_text(self, new_text: str):
+        if self.is_locked:
+            print(f"Clause {self.id} is locked. Cannot update text.")
+            return
         self.text = new_text
         self.last_modified_date = datetime.datetime.now().isoformat()
         self.version += 1
 
     def update_jurisdiction(self, new_jurisdiction: str):
+        if self.is_locked:
+            print(f"Clause {self.id} is locked. Cannot update jurisdiction.")
+            return
         self.jurisdiction = new_jurisdiction
         self.last_modified_date = datetime.datetime.now().isoformat()
         self.version += 1
+
+    def set_lock_status(self, locked: bool):
+        self.is_locked = locked
+        self.last_modified_date = datetime.datetime.now().isoformat() # Locking is a modification
+        # self.version +=1 # Optionally increment version on lock/unlock
 
     def __str__(self):
         # The dynamic display number will be prepended by the UI view.
         # This string representation is for the content part of the list item.
         # It should not include the ID, as that's in the details panel.
         # Section title will be part of the display number if present.
-        text_summary = self.text[:70] + "..." if len(self.text) > 70 else self.text
-        return f"({self.jurisdiction}) {text_summary}"
+        lock_indicator = "🔒 " if self.is_locked else ""
+        text_summary = self.text[:65] + "..." if len(self.text) > 65 else self.text # Adjusted length for lock icon
+        return f"{lock_indicator}({self.jurisdiction}) {text_summary}"
 
     def to_dict(self) -> dict:
         """Serializes the clause to a dictionary."""
@@ -48,8 +61,9 @@ class Clause:
             "last_modified_date": self.last_modified_date,
             "version": self.version,
             "metadata": self.metadata,
-            "level": self.level,                 # New
-            "section_title": self.section_title, # New
+            "level": self.level,
+            "section_title": self.section_title,
+            "is_locked": self.is_locked, # New
         }
 
     @classmethod
@@ -60,9 +74,10 @@ class Clause:
             clause_id=data.get("id"),
             jurisdiction=data.get("jurisdiction", "Lex Aequies"),
             origin=data.get("origin", "User Input"),
-            level=data.get("level", 1),                             # New
-            section_title=data.get("section_title")                 # New
+            level=data.get("level", 1),
+            section_title=data.get("section_title")
         )
+        clause.is_locked = data.get("is_locked", False) # New
         # Preserve original creation/modification dates and version if available
         clause.creation_date = data.get("creation_date", clause.creation_date)
         clause.last_modified_date = data.get("last_modified_date", clause.last_modified_date)

@@ -235,8 +235,8 @@ class MichaudFamilyPostalCharter(BaseDocument):
         doc.vienna_convention_reference_details = data.get("vienna_convention_reference_details", "")
         doc.postal_treaty_law_reference_details = data.get("postal_treaty_law_reference_details", "")
         doc.family_trust_ref = data.get("family_trust_ref")
-            doc.upu_tracking_number = data.get("upu_tracking_number")
-            doc.jurisdictional_delivery_tag = data.get("jurisdictional_delivery_tag")
+        doc.upu_tracking_number = data.get("upu_tracking_number")
+        doc.jurisdictional_delivery_tag = data.get("jurisdictional_delivery_tag")
         return doc
 
 class MichaudSpecialDepositDocument(BaseDocument):
