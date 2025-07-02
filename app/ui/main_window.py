@@ -14,6 +14,7 @@ from .charter_view import CharterView
 from .deposit_view import DepositView
 from .settings_view import SettingsView
 from .dashboard_view import DashboardView
+from .law_library_view import LawLibraryView # Import the new view
 from app.ui.dialogs.personal_info_dialog import PersonalInfoDialog
 from .ledger_view import LedgerView
 from app.core.daily_assistant_agent import DailyAssistantAgent # Import DailyAssistantAgent
@@ -39,14 +40,16 @@ class MainWindow(QMainWindow):
         self.charter_view = CharterView(self)
         self.deposit_view = DepositView(self)
         self.settings_view = SettingsView(main_window=self)
-        self.ledger_view = LedgerView(self) # Create LedgerView instance
+        self.ledger_view = LedgerView(self)
+        self.law_library_view = LawLibraryView(self) # Instantiate LawLibraryView
 
         # Add tabs, dashboard first
         self.tab_widget.addTab(self.dashboard_view, "Master AI Dashboard")
         self.tab_widget.addTab(self.trust_view, DOC_TRUST)
         self.tab_widget.addTab(self.charter_view, DOC_CHARTER)
         self.tab_widget.addTab(self.deposit_view, DOC_DEPOSIT)
-        self.tab_widget.addTab(self.ledger_view, "Document Ledgers") # Add actual LedgerView
+        self.tab_widget.addTab(self.ledger_view, "Document Ledgers")
+        self.tab_widget.addTab(self.law_library_view, "Law Library & Codex") # Add new tab
         self.tab_widget.addTab(self.settings_view, "System Preferences")
 
         self.tab_widget.currentChanged.connect(self._on_tab_changed)
@@ -304,6 +307,11 @@ class MainWindow(QMainWindow):
             self.ledger_view.set_document(None) # Clear ledger if not a doc tab
             if hasattr(self, 'dashboard_view'):
                  self.dashboard_view.update_current_document(None, None)
+
+        # If Law Library tab is selected, refresh its list
+        if isinstance(widget, LawLibraryView):
+            if hasattr(widget, 'refresh_library_list'):
+                widget.refresh_library_list()
 
 
     def _get_active_document_view(self) -> QWidget | None:

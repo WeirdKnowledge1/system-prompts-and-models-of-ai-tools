@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QFormLayout, QLineEdit,
-                             QTextEdit, QComboBox, QDialogButtonBox, QLabel, QSpinBox) # Added QSpinBox
+                             QTextEdit, QComboBox, QDialogButtonBox, QLabel, QSpinBox, QCheckBox) # Added QCheckBox
 from PyQt6.QtCore import Qt
 from app.core.clause_model import Clause
 
@@ -57,6 +57,14 @@ class EditClauseDialog(QDialog):
         self.section_title_edit.setPlaceholderText("Optional: e.g., 'Article I: Definitions', 'Part 2: Conveyance'")
         self.section_title_edit.setToolTip("If this clause starts a new named section, enter its title here.")
         form_layout.addRow(QLabel("Section Title (Optional):"), self.section_title_edit)
+
+        # Law Library Reference Placeholder
+        self.law_library_ref_label = QLabel("Source Reference (Law Library):")
+        self.law_library_ref_input = QLineEdit()
+        self.law_library_ref_input.setPlaceholderText("Future: Link to Law Library document")
+        self.law_library_ref_input.setReadOnly(True) # Non-functional for now
+        self.law_library_ref_input.setToolTip("This feature will allow linking this clause to a source document in the Law Library.")
+        form_layout.addRow(self.law_library_ref_label, self.law_library_ref_input)
 
         # Lock Checkbox
         self.lock_checkbox = QCheckBox("Lock this clause (prevents edits)")
