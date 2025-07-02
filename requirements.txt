@@ -6,3 +6,4 @@ Pillow>=9.0
 PyPDF2>=3.0.0
 scikit-learn>=1.0.0
 # For TF-IDF and cosine similarity. NLTK might be added later for advanced preprocessing.
+python-docx>=0.8.11

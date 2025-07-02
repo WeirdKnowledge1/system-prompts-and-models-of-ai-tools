@@ -439,6 +439,45 @@ class ClauseConformer(BaseAgent):
                     "severity": "info"
                 })
 
+        # New Check 7: Potential Missing Law Library References
+        # Define keywords/patterns that might indicate a reference is needed.
+        # This is a very basic heuristic and can be expanded significantly.
+        reference_keywords = [
+            r"pursuant to", r"as defined in", r"section\s+\d+(\.\d+)*",
+            r"article\s+[IVXLCDM]+", r"statute", r"regulation", r"code\s+of",
+            r"act\s+of\s+\d{4}", # e.g., Act of 1999
+            r"\b(?:U\.S\.C\.|CFR|R\.S\.C\.|S\.C\.)\b" # Common legal citation prefixes
+        ]
+        # Combine into a single regex pattern for efficiency if searching all at once
+        # For now, iterate through them.
+        # A more advanced approach would use NLP to identify citations.
+
+        for i, clause in enumerate(document_obj.clauses):
+            found_keyword_indicator = False
+            for pattern_str in reference_keywords:
+                # Case-insensitive search for each pattern
+                if re.search(pattern_str, clause.text, re.IGNORECASE):
+                    found_keyword_indicator = True
+                    break # Found one indicator, no need to check others for this clause
+
+            if found_keyword_indicator and not clause.metadata.get('law_library_ref'):
+                # Get display number for better user context
+                display_numbers = generate_display_clause_numbers(document_obj.clauses) # Could optimize by getting once
+                clause_label = display_numbers[i] if i < len(display_numbers) else f"Clause {i+1}"
+
+                issues_report.append({
+                    "type": "potential_missing_reference",
+                    "id": clause.id,
+                    "issue": f"Clause '{clause_label}' (ID: {clause.id[:8]}...) text may contain a citation or reference, "
+                             "but no Law Library document is linked.",
+                    "severity": "info",
+                    "suggestions": [
+                        "Review clause text for specific citations (e.g., statutes, case law).",
+                        "If a source document exists in the Law Library (or should be added), "
+                        "link it via the 'Edit Clause' dialog's 'Source Reference' field."
+                    ]
+                })
+
 
         if not issues_report:
             print(f"{self.agent_name}: No basic issues found in {document_obj.name}.")

@@ -1,7 +1,13 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QFormLayout, QLineEdit,
-                             QTextEdit, QComboBox, QDialogButtonBox, QLabel, QSpinBox, QCheckBox) # Added QCheckBox
+                              QTextEdit, QComboBox, QDialogButtonBox, QLabel, QSpinBox, QCheckBox, QPushButton, QHBoxLayout) # Added QPushButton, QHBoxLayout
 from PyQt6.QtCore import Qt
 from app.core.clause_model import Clause
+# Assuming SelectLawLibraryRefDialog is in the same directory or path is handled
+try:
+    from .select_law_library_ref_dialog import SelectLawLibraryRefDialog
+except ImportError: # Fallback for direct execution or different structuring
+    from select_law_library_ref_dialog import SelectLawLibraryRefDialog
+
 
 class EditClauseDialog(QDialog):
     def __init__(self, clause: Clause = None, default_jurisdiction="Lex Aequies", parent=None):
@@ -60,11 +66,20 @@ class EditClauseDialog(QDialog):
 
         # Law Library Reference Placeholder
         self.law_library_ref_label = QLabel("Source Reference (Law Library):")
+
+        law_library_ref_layout = QHBoxLayout() # Layout for QLineEdit and Browse button
         self.law_library_ref_input = QLineEdit()
-        self.law_library_ref_input.setPlaceholderText("Future: Link to Law Library document")
-        self.law_library_ref_input.setReadOnly(True) # Non-functional for now
-        self.law_library_ref_input.setToolTip("This feature will allow linking this clause to a source document in the Law Library.")
-        form_layout.addRow(self.law_library_ref_label, self.law_library_ref_input)
+        self.law_library_ref_input.setPlaceholderText("e.g., statutes/MyStatute.pdf or type manually")
+        self.law_library_ref_input.setReadOnly(False) # Make it editable
+        self.law_library_ref_input.setToolTip("Link this clause to a source document in the Law Library.")
+
+        self.browse_law_library_button = QPushButton("Browse Library...")
+        self.browse_law_library_button.clicked.connect(self._browse_law_library_for_reference)
+
+        law_library_ref_layout.addWidget(self.law_library_ref_input, 1) # Input takes more space
+        law_library_ref_layout.addWidget(self.browse_law_library_button)
+
+        form_layout.addRow(self.law_library_ref_label, law_library_ref_layout)
 
         # Lock Checkbox
         self.lock_checkbox = QCheckBox("Lock this clause (prevents edits)")
@@ -99,6 +114,7 @@ class EditClauseDialog(QDialog):
             self.purpose_type_edit.setText(self.clause.metadata.get("purpose_type", ""))
             self.level_spinbox.setValue(self.clause.level if hasattr(self.clause, 'level') else 1)
             self.section_title_edit.setText(self.clause.section_title if hasattr(self.clause, 'section_title') else "")
+            self.law_library_ref_input.setText(self.clause.metadata.get('law_library_ref', "")) # Load reference
             self.lock_checkbox.setChecked(self.clause.is_locked if hasattr(self.clause, 'is_locked') else False)
             self._on_lock_changed(self.lock_checkbox.checkState().value) # Apply initial field disabled state
         else: # For new clause, set defaults
@@ -133,8 +149,14 @@ class EditClauseDialog(QDialog):
         purpose_type = self.purpose_type_edit.text().strip()
         if purpose_type:
             self.clause.metadata["purpose_type"] = purpose_type
-        elif "purpose_type" in self.clause.metadata:
+        elif "purpose_type" in self.clause.metadata: # Remove if empty and key exists
             del self.clause.metadata["purpose_type"]
+
+        law_library_ref = self.law_library_ref_input.text().strip()
+        if law_library_ref:
+            self.clause.metadata["law_library_ref"] = law_library_ref
+        elif "law_library_ref" in self.clause.metadata: # Remove if empty and key exists
+            del self.clause.metadata["law_library_ref"]
 
         self.clause.set_lock_status(self.lock_checkbox.isChecked()) # Update lock status in model
 
@@ -154,6 +176,19 @@ class EditClauseDialog(QDialog):
     def get_clause(self) -> Clause:
         """Returns the clause object (new or updated)."""
         return self.clause
+
+    def _browse_law_library_for_reference(self):
+        if SelectLawLibraryRefDialog is None: # Check if import failed
+            QMessageBox.critical(self, "Error", "Law Library selection dialog is unavailable due to an import error.")
+            return
+
+        dialog = SelectLawLibraryRefDialog(self)
+        if dialog.exec():
+            selected_ref = dialog.get_selected_reference()
+            if selected_ref:
+                self.law_library_ref_input.setText(selected_ref)
+                # Note: textChanged signal on law_library_ref_input will update clause.metadata
+                # when _apply_changes_to_clause is called during accept().
 
 if __name__ == '__main__':
     # Example Usage

@@ -5,7 +5,7 @@ from PyQt6.QtCore import Qt, QDir
 import os
 import shutil # For file copying
 from app.utils.constants import CODEX_VAULT_DIR
-from app.core.document_utils import extract_text_from_pdf # Import PDF extraction utility
+from app.core.document_utils import extract_text_from_pdf, extract_text_from_docx # Import extraction utilities
 
 LAW_LIBRARY_SUBDIR = "codex_vault_sources/law_library"
 LAW_LIBRARY_PATH = os.path.join(CODEX_VAULT_DIR, LAW_LIBRARY_SUBDIR)
@@ -86,7 +86,7 @@ class LawLibraryView(QWidget):
 
             found_files = []
             for filename in os.listdir(LAW_LIBRARY_PATH):
-                if filename.lower().endswith((".txt", ".md", ".pdf")): # Added .pdf
+                if filename.lower().endswith((".txt", ".md", ".pdf", ".docx")): # Added .docx
                     full_path = os.path.join(LAW_LIBRARY_PATH, filename)
                     if os.path.isfile(full_path): # Ensure it's a file
                         found_files.append({"name": filename, "path": full_path})
@@ -130,10 +130,16 @@ class LawLibraryView(QWidget):
                 content = ""
                 if file_path.lower().endswith(".pdf"):
                     content = extract_text_from_pdf(file_path)
-                    if content is None or content.startswith("Error:"): # Check for extraction errors
+                    if content is None or content.startswith("Error:"):
                          self.doc_content_viewer.setPlainText(content or "Failed to extract text from PDF.")
                          return
-                    self.doc_content_viewer.setPlainText(content) # Display extracted PDF text as plain text
+                    self.doc_content_viewer.setPlainText(content)
+                elif file_path.lower().endswith(".docx"):
+                    content = extract_text_from_docx(file_path)
+                    if content is None or content.startswith("Error:"):
+                        self.doc_content_viewer.setPlainText(content or "Failed to extract text from DOCX.")
+                        return
+                    self.doc_content_viewer.setPlainText(content) # Display extracted DOCX text as plain text
                 elif file_path.lower().endswith(".md"):
                     with open(file_path, 'r', encoding='utf-8') as f:
                         content = f.read()
@@ -142,11 +148,11 @@ class LawLibraryView(QWidget):
                     with open(file_path, 'r', encoding='utf-8') as f:
                         content = f.read()
                     self.doc_content_viewer.setPlainText(content)
-                else: # Should not happen if only .txt, .md, .pdf are listed
-                    self.doc_content_viewer.setPlainText("Unsupported file type for preview.")
+                else:
+                    self.doc_content_viewer.setPlainText("Unsupported file type selected for preview.")
 
-            except UnicodeDecodeError: # This applies mainly to .txt and .md if not UTF-8
-                self.doc_content_viewer.setPlainText(f"Error: Could not decode text file '{os.path.basename(file_path)}'.\n"
+            except UnicodeDecodeError:
+                self.doc_content_viewer.setPlainText(f"Error: Could not decode text-based file '{os.path.basename(file_path)}'.\n"
                                                      "The file may not be UTF-8 encoded or is corrupted.")
             except IOError as e:
                 self.doc_content_viewer.setPlainText(f"Error reading file: {os.path.basename(file_path)}\n{e.strerror}")
@@ -167,9 +173,9 @@ class LawLibraryView(QWidget):
     def _upload_files_to_library(self):
         file_paths, _ = QFileDialog.getOpenFileNames(
             self,
-            "Select Files to Upload to Law Library", # More general title
-            QDir.homePath(), # Start in user's home directory
-            "Supported Files (*.txt *.md *.pdf);;Text Files (*.txt);;Markdown Files (*.md);;PDF Files (*.pdf);;All Files (*)" # Updated filter
+            "Select Files to Upload to Law Library",
+            QDir.homePath(),
+            "Supported Files (*.txt *.md *.pdf *.docx);;Text Files (*.txt);;Markdown Files (*.md);;PDF Files (*.pdf);;Word Documents (*.docx);;All Files (*)" # Added .docx
         )
 
         if not file_paths:
@@ -246,34 +252,41 @@ class LawLibraryView(QWidget):
             # If the directory doesn't exist, os.listdir will raise FileNotFoundError, caught below.
 
             for filename in os.listdir(LAW_LIBRARY_PATH): # Search current files in directory
-                if filename.lower().endswith((".txt", ".md", ".pdf")): # Include .pdf
+                if filename.lower().endswith((".txt", ".md", ".pdf", ".docx")): # Added .docx
                     full_path = os.path.join(LAW_LIBRARY_PATH, filename)
                     if os.path.isfile(full_path):
                         content_to_search = ""
                         try:
                             if filename.lower().endswith(".pdf"):
                                 temp_content = extract_text_from_pdf(full_path)
-                                # Ensure content is a string and not an error message from extraction
                                 if temp_content and not temp_content.startswith("Error:") and \
                                    not temp_content.startswith("(No text could be extracted"):
                                     content_to_search = temp_content
                                 else:
-                                    print(f"Skipping PDF '{filename}' in search due to extraction issue or no text: {temp_content}")
-                                    continue # Skip this file for search if content is bad or empty
+                                    print(f"Skipping PDF '{filename}' in search (extraction issue/no text): {temp_content}")
+                                    continue
+                            elif filename.lower().endswith(".docx"):
+                                temp_content = extract_text_from_docx(full_path)
+                                if temp_content and not temp_content.startswith("Error:") and \
+                                   not temp_content.startswith("(No text could be extracted"):
+                                    content_to_search = temp_content
+                                else:
+                                    print(f"Skipping DOCX '{filename}' in search (extraction issue/no text): {temp_content}")
+                                    continue
                             else: # .txt or .md
                                 with open(full_path, 'r', encoding='utf-8') as f:
                                     content_to_search = f.read()
 
-                            if content_to_search and search_term in content_to_search.lower(): # Case-insensitive content check
+                            if content_to_search and search_term in content_to_search.lower():
                                 item = QListWidgetItem(filename)
                                 item.setData(Qt.ItemDataRole.UserRole, full_path)
                                 self.doc_list_widget.addItem(item)
                                 matching_files_count += 1
                         except UnicodeDecodeError:
-                            print(f"Skipping file due to encoding error during search: {filename}")
+                            print(f"Skipping text file due to encoding error during search: {filename}")
                         except IOError:
                             print(f"Skipping file due to IO error during search: {filename}")
-                        except Exception as e_search_file: # Catch other errors during file processing for search
+                        except Exception as e_search_file:
                             print(f"Error processing file {filename} for search: {e_search_file}")
 
             if matching_files_count == 0:
