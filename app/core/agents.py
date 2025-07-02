@@ -5,6 +5,7 @@ from PyQt6.QtGui import QPixmap, QImage
 import os
 import datetime
 import re # For regex-based cross-reference search
+import shutil # For file copying in AutoBackup
 
 from app.core.document_utils import generate_display_clause_numbers # Import for numbering checks
 
@@ -347,25 +348,78 @@ class AutoBackup(BaseAgent):
         super().__init__(agent_name="AutoBackup", app_context=app_context)
         self.backup_location = os.path.join("data", "backups")
         os.makedirs(self.backup_location, exist_ok=True)
+        self.data_root_dir = "data" # Base directory for other data files
 
     def perform_backup(self):
         self.set_status("Performing system backup.")
-        # Placeholder: Logic to collect all relevant data and store it securely.
-        # This would involve serializing documents, settings, agent states, and copying files.
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_filename = f"mpea_backup_{timestamp}.zip" # Or other archive format
-        backup_path = os.path.join(self.backup_location, backup_filename)
+        # Create a timestamped subdirectory for this specific backup
+        current_backup_dir_name = f"mpea_backup_{timestamp}"
+        current_backup_path = os.path.join(self.backup_location, current_backup_dir_name)
 
-        print(f"{self.agent_name}: System backup initiated. Target: {backup_path}. (Placeholder - no actual files backed up)")
-        # Simulate creating a backup file
         try:
-            with open(backup_path, 'w') as f: # Create an empty file as placeholder
-                f.write(f"Placeholder backup content for {timestamp}")
-            print(f"{self.agent_name}: Backup successfully created (placeholder file).")
+            os.makedirs(current_backup_path, exist_ok=True)
+            print(f"{self.agent_name}: Created backup directory: {current_backup_path}")
+
+            # 1. Copy essential application data files
+            app_data_files_to_copy = {
+                "app_settings.json": os.path.join(self.data_root_dir, "app_settings.json"),
+                "personal_profiles.json": os.path.join(self.data_root_dir, "personal_profiles.json"),
+                "active_sessions.json": os.path.join(self.data_root_dir, "active_sessions.json") # From DocumentTracker
+            }
+
+            for filename, source_path in app_data_files_to_copy.items():
+                if os.path.exists(source_path):
+                    try:
+                        shutil.copy2(source_path, os.path.join(current_backup_path, filename))
+                        print(f"Copied {filename} to backup.")
+                    except Exception as e_file:
+                        print(f"Error copying {filename} to backup: {e_file}")
+                else:
+                    print(f"Skipping {filename}, not found at {source_path}.")
+
+            # 2. Copy document files (trusts, charters, deposits)
+            document_types_info = {
+                "trusts": {"ext": ".mpea_trust", "path": os.path.join(self.data_root_dir, "trusts")},
+                "charters": {"ext": ".mpea_charter", "path": os.path.join(self.data_root_dir, "charters")},
+                "deposits": {"ext": ".mpea_deposit", "path": os.path.join(self.data_root_dir, "deposits")}
+            }
+
+            for doc_type, info in document_types_info.items():
+                source_doc_dir = info["path"]
+                backup_doc_type_dir = os.path.join(current_backup_path, doc_type)
+
+                if os.path.exists(source_doc_dir):
+                    os.makedirs(backup_doc_type_dir, exist_ok=True)
+                    copied_count = 0
+                    for item_name in os.listdir(source_doc_dir):
+                        if item_name.endswith(info["ext"]):
+                            source_item_path = os.path.join(source_doc_dir, item_name)
+                            dest_item_path = os.path.join(backup_doc_type_dir, item_name)
+                            try:
+                                shutil.copy2(source_item_path, dest_item_path)
+                                copied_count +=1
+                            except Exception as e_doc:
+                                print(f"Error copying document {source_item_path} to backup: {e_doc}")
+                    print(f"Copied {copied_count} '{doc_type}' documents to backup.")
+                else:
+                    print(f"Skipping '{doc_type}' documents, directory not found: {source_doc_dir}")
+
+            # Optionally, could also backup codex_vault_sources/uploads if needed, or other specific dirs.
+
+            print(f"{self.agent_name}: Backup successfully completed to {current_backup_path}")
             self.set_status("Idle")
-            return backup_path
+            return current_backup_path
         except Exception as e:
             self.log_error(f"Backup failed: {e}")
+            # Clean up partially created backup directory if error occurs during its creation or top-level ops
+            if os.path.exists(current_backup_path) and not os.listdir(current_backup_path): # if empty
+                try:
+                    os.rmdir(current_backup_path)
+                except OSError: pass # ignore if not empty due to partial success
+            elif os.path.exists(current_backup_path): # if not empty, but failed, user might want to inspect
+                print(f"Note: Backup directory {current_backup_path} may contain partial data due to error.")
+
             return None
 
 

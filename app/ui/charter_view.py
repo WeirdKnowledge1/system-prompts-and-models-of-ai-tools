@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QGridLayout, QLabel, QLineEdit,
                              QTextEdit, QPushButton, QMessageBox, QListWidget, QFileDialog,
-                             QHBoxLayout, QGroupBox, QListWidgetItem)
+                             QHBoxLayout, QGroupBox, QListWidgetItem, QInputDialog, QApplication) # Added QInputDialog, QApplication
 from PyQt6.QtCore import Qt
 import json
 import os
@@ -21,6 +21,7 @@ class CharterView(QWidget):
         self.current_document_path = None
         self.document = MichaudFamilyPostalCharter(name="Untitled Michaud Family Postal Charter")
         self.is_modified = False
+        self.last_conformance_issues = None # To store issues for GitHub reporting
         self._setup_ui()
         self._connect_modification_signals()
 
@@ -96,12 +97,15 @@ class CharterView(QWidget):
         self.family_trust_ref_label = QLabel("Family Trust Reference (ID/Path):")
         link_ft_layout = QHBoxLayout()
         self.family_trust_ref_input = QLineEdit(self.document.family_trust_ref or "")
-        self.family_trust_ref_input.setPlaceholderText("Enter ID of linked Family Trust")
+        self.family_trust_ref_input.setPlaceholderText("Enter ID, relative path, or browse")
         self.family_trust_ref_input.textChanged.connect(self._update_family_trust_ref)
         self.browse_ft_button = QPushButton("Browse...")
         self.browse_ft_button.clicked.connect(lambda: self._browse_linked_document("FamilyTrust"))
+        self.clear_ft_button = QPushButton("Clear") # New Clear Button
+        self.clear_ft_button.clicked.connect(lambda: self._clear_linked_document("FamilyTrust")) # New Slot
         link_ft_layout.addWidget(self.family_trust_ref_input)
         link_ft_layout.addWidget(self.browse_ft_button)
+        link_ft_layout.addWidget(self.clear_ft_button) # Add Clear button to layout
         charter_details_layout.addWidget(self.family_trust_ref_label)
         charter_details_layout.addLayout(link_ft_layout)
 
@@ -246,19 +250,62 @@ class CharterView(QWidget):
 
         self.conformance_check_button = QPushButton("Run Basic Conformance Check")
         self.conformance_check_button.clicked.connect(self.run_basic_conformance_check)
-        main_layout.addWidget(self.conformance_check_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.create_github_issue_button = QPushButton("Create GitHub Issue for Conformance Failures")
+        self.create_github_issue_button.clicked.connect(self._create_github_issue_for_conformance)
+        self.create_github_issue_button.setVisible(False)
+
+        conformance_layout = QHBoxLayout()
+        conformance_layout.addWidget(self.conformance_check_button)
+        conformance_layout.addWidget(self.create_github_issue_button)
+        conformance_layout.addStretch()
+        main_layout.addLayout(conformance_layout)
 
         main_layout.addStretch()
         self.load_document_data_into_ui()
 
-    def _update_family_trust_ref(self, text: str): # New method
+    def _update_family_trust_ref(self, text: str):
         self.document.family_trust_ref = text.strip() or None
         self._mark_as_modified()
 
-    def _browse_linked_document(self, doc_type_name: str): # New method
-        QMessageBox.information(self, f"Browse for {doc_type_name}",
-                                f"Browsing for existing {doc_type_name} documents is not yet implemented. "
-                                "Please enter the Document ID manually if known.")
+    def _browse_linked_document(self, link_type: str): # Was doc_type_name, changed to link_type for consistency
+        if link_type == "FamilyTrust":
+            doc_dir_name = "trusts"
+            file_filter = "Michaud Postal Equity App Trust Files (*.mpea_trust);;All Files (*)"
+            target_input_widget = self.family_trust_ref_input
+            model_attribute_name = "family_trust_ref"
+            dialog_title = "Select Linked Family Trust Document"
+        else:
+            QMessageBox.warning(self, "Error", f"Unknown link type for Charter: {link_type}")
+            return
+
+        start_dir = os.path.join(CODEX_VAULT_DIR, doc_dir_name)
+        os.makedirs(start_dir, exist_ok=True)
+
+        filePath, _ = QFileDialog.getOpenFileName(self, dialog_title, start_dir, file_filter)
+
+        if filePath:
+            try:
+                relative_path = os.path.relpath(filePath, CODEX_VAULT_DIR)
+                display_path = relative_path
+            except ValueError:
+                display_path = filePath
+
+            if os.path.isabs(display_path) and filePath.startswith(os.path.abspath(CODEX_VAULT_DIR)):
+                 display_path = os.path.relpath(filePath, CODEX_VAULT_DIR)
+
+            target_input_widget.setText(display_path)
+            setattr(self.document, model_attribute_name, display_path)
+            self._mark_as_modified()
+            QMessageBox.information(self, "Link Set", f"{link_type} linked to: {display_path}")
+
+    def _clear_linked_document(self, link_type: str): # New method
+        if link_type == "FamilyTrust":
+            self.family_trust_ref_input.clear()
+            self.document.family_trust_ref = None
+        else:
+            return
+        self._mark_as_modified()
+        QMessageBox.information(self, "Link Cleared", f"{link_type} link cleared.")
 
     # ... (all other methods: _update_document_jurisdiction, _collect_data_from_ui,
     #      _generate_and_set_delivery_tag, _update_jurisdictional_delivery_tag,
@@ -612,25 +659,89 @@ class CharterView(QWidget):
         self._collect_data_from_ui()
         main_window_instance = self.window()
         conformer = ClauseConformer(app_context=main_window_instance)
-        issues_report = conformer.check_document_for_basic_issues(self.document)
-        if issues_report:
-            detailed_report = [f"- ID: {item['id'][:15]}... ({item['severity']}): {item['issue']}" for item in issues_report]
-            warning_count = sum(1 for item in issues_report if item['severity'] == 'warning')
-            info_count = len(issues_report) - warning_count
-            summary = f"{len(issues_report)} issue(s) found: {warning_count} warning(s), {info_count} info."
+        self.last_conformance_issues = conformer.check_document_for_basic_issues(self.document) # Store
+
+        if self.last_conformance_issues:
+            detailed_report_items = [f"- ID: {item.get('id', 'N/A')[:15]}... ({item.get('severity', 'N/A')}): {item.get('issue', 'N/A')}" for item in self.last_conformance_issues]
+            warning_count = sum(1 for item in self.last_conformance_issues if item.get('severity') == 'warning')
+            info_count = len(self.last_conformance_issues) - warning_count
+            summary = f"{len(self.last_conformance_issues)} issue(s) found: {warning_count} warning(s), {info_count} info."
+
+            self.create_github_issue_button.setVisible(True) # Show button
+
             if is_auto_check:
                 if hasattr(main_window_instance, 'status_bar'):
                     main_window_instance.status_bar.showMessage(f"Conformance: {summary}", 10000)
-                print(f"Auto Conformance Check (Charter):\n{summary}\nDetails:\n" + "\n".join(detailed_report))
+                print(f"Auto Conformance Check (Charter):\n{summary}\nDetails:\n" + "\n".join(detailed_report_items))
             else:
-                QMessageBox.warning(self, "Conformance Issues Found", summary + "\n\nDetails:\n" + "\n".join(detailed_report))
+                QMessageBox.warning(self, "Conformance Issues Found", summary + "\n\nDetails:\n" + "\n".join(detailed_report_items))
         else:
+            self.last_conformance_issues = None
+            self.create_github_issue_button.setVisible(False) # Hide button
             if not is_auto_check:
                 QMessageBox.information(self, "Conformance Check", "No basic conformance issues found.")
             else:
                 if hasattr(main_window_instance, 'status_bar'):
                     main_window_instance.status_bar.showMessage("Conformance: No basic issues found.", 5000)
                 print("Auto Conformance Check (Charter): No basic issues found.")
+
+    def _create_github_issue_for_conformance(self): # Copied from TrustView, should be identical
+        if not self.last_conformance_issues:
+            QMessageBox.information(self, "No Issues", "No conformance issues to report.")
+            return
+
+        repo_name, ok = QInputDialog.getText(self, "GitHub Repository",
+                                             "Enter repository name (owner/repo):")
+        if not ok or not repo_name.strip():
+            QMessageBox.warning(self, "Input Error", "Repository name cannot be empty.")
+            return
+
+        repo_name = repo_name.strip()
+        issue_title = f"Conformance Issues in Document: {self.document.name} ({self.document.id})"
+        body_parts = ["Conformance issues detected in document:\n"]
+        for item in self.last_conformance_issues:
+            body_parts.append(f"- **Severity:** {item.get('severity', 'N/A')}")
+            body_parts.append(f"  **Clause/Doc ID:** {item.get('id', 'N/A')}")
+            body_parts.append(f"  **Issue:** {item.get('issue', 'N/A')}\n")
+        issue_body = "\n".join(body_parts)
+
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        project_root_for_path = None # For finally block
+        try:
+            import sys
+            import os
+            project_root_for_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+            if project_root_for_path not in sys.path:
+                sys.path.insert(0, project_root_for_path)
+            from api_integrations import github_create_issue
+
+            created_issue = github_create_issue(repo_name, issue_title, issue_body)
+            QApplication.restoreOverrideCursor()
+
+            if created_issue and created_issue.get("html_url"):
+                msg_box = QMessageBox(self)
+                msg_box.setIcon(QMessageBox.Icon.Information)
+                msg_box.setWindowTitle("GitHub Issue Created")
+                msg_box.setTextFormat(Qt.TextFormat.RichText)
+                msg_box.setText(f"Successfully created GitHub issue in '{repo_name}'.\n"
+                                f"<a href='{created_issue.get('html_url')}'>View Issue: {created_issue.get('number')}</a>")
+                msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+                msg_box.exec()
+            else:
+                QMessageBox.information(self, "GitHub Issue Created",
+                                        f"Issue created in '{repo_name}', but no URL or full data returned.")
+        except ImportError as ie:
+            QApplication.restoreOverrideCursor()
+            QMessageBox.critical(self, "Error", f"Could not import API integration module: {ie}")
+        except ValueError as ve:
+            QApplication.restoreOverrideCursor()
+            QMessageBox.critical(self, "Configuration Error", str(ve))
+        except Exception as e:
+            QApplication.restoreOverrideCursor()
+            QMessageBox.critical(self, "API Error", f"Could not create GitHub issue:\n{e}")
+        finally:
+            if project_root_for_path and project_root_for_path in sys.path and sys.path[0] == project_root_for_path:
+                sys.path.pop(0)
 
 if __name__ == '__main__':
     import sys

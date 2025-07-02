@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QGridLayout, QLabel, QTextEdit,
-                             QPushButton, QListWidget, QGroupBox, QHBoxLayout)
+                             QPushButton, QListWidget, QGroupBox, QHBoxLayout, QApplication) # Added QApplication
 from PyQt6.QtCore import Qt, QTimer # QTimer might be used later for live updates
 
 class DashboardView(QWidget):
@@ -62,6 +62,31 @@ class DashboardView(QWidget):
         mid_layout.addWidget(ledger_preview_group, 1) # Stretch factor 1
 
         main_layout.addLayout(mid_layout)
+
+        # GitHub Tools Group
+        github_tools_group = QGroupBox("GitHub Repository Tools")
+        github_tools_layout = QVBoxLayout()
+
+        repo_input_layout = QHBoxLayout()
+        self.github_repo_label = QLabel("Repo (owner/repo):")
+        self.github_repo_input = QLineEdit()
+        self.github_repo_input.setPlaceholderText("e.g., octocat/Spoon-Knife")
+        self.fetch_repo_info_button = QPushButton("Fetch Repo Info")
+        self.fetch_repo_info_button.clicked.connect(self._fetch_github_repo_info) # Connect the button
+
+        repo_input_layout.addWidget(self.github_repo_label)
+        repo_input_layout.addWidget(self.github_repo_input, 1) # Stretch input field
+        repo_input_layout.addWidget(self.fetch_repo_info_button)
+        github_tools_layout.addLayout(repo_input_layout)
+
+        self.github_repo_info_display = QTextEdit()
+        self.github_repo_info_display.setReadOnly(True)
+        self.github_repo_info_display.setPlaceholderText("Repository information will be displayed here...")
+        self.github_repo_info_display.setFixedHeight(100) # Adjust as needed
+        github_tools_layout.addWidget(self.github_repo_info_display)
+
+        github_tools_group.setLayout(github_tools_layout)
+        main_layout.addWidget(github_tools_group) # Add before notifications or actions
 
         # Codex Notifications
         notifications_group = QGroupBox("Time-Stamped Codex Notifications")
@@ -143,6 +168,73 @@ class DashboardView(QWidget):
 
     def update_memory_summary(self, summary_text: str):
         self.memory_summary_text.setPlainText(summary_text)
+
+    def _fetch_github_repo_info(self):
+        repo_name = self.github_repo_input.text().strip()
+        if not repo_name:
+            self.github_repo_info_display.setText("Error: Repository name cannot be empty.")
+            return
+
+        self.github_repo_info_display.setText(f"Fetching information for {repo_name}...")
+        QApplication.processEvents() # Ensure UI updates before potentially long call
+
+        try:
+            # It's better to import where needed or at the top of the module,
+            # but for this specific integration, ensure it's available.
+            # Assuming api_integrations.py is in a place Python can find it (e.g., PYTHONPATH or same level)
+            # For our project structure, it's one level up from app.ui then into root.
+            # Proper way would be to access it via a controller or service in app.core
+            # that has access to api_integrations. For now, direct import for simplicity in this step.
+
+            # --- Temporary direct import path adjustment for this example ---
+            # This is NOT ideal for production code but helps in this isolated step.
+            import sys
+            import os
+            # Add project root to path to find api_integrations.py
+            # This assumes dashboard_view.py is in app/ui/
+            project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+            if project_root not in sys.path:
+                sys.path.insert(0, project_root)
+            # --- End temporary path adjustment ---
+
+            from api_integrations import github_fetch_repo_metadata # Now this import should work
+
+            metadata = github_fetch_repo_metadata(repo_name)
+
+            if metadata:
+                info_text = (
+                    f"Name: {metadata.get('name', 'N/A')}\n"
+                    f"Full Name: {metadata.get('full_name', 'N/A')}\n"
+                    f"Description: {metadata.get('description', 'N/A')}\n"
+                    f"Stars: {metadata.get('stargazers_count', 'N/A')}\n"
+                    f"Forks: {metadata.get('forks_count', 'N/A')}\n"
+                    f"Last Updated: {metadata.get('updated_at', 'N/A')}\n"
+                    f"URL: {metadata.get('html_url', 'N/A')}"
+                )
+                self.github_repo_info_display.setText(info_text)
+            else:
+                self.github_repo_info_display.setText(f"No metadata returned for {repo_name}.")
+
+        except ImportError as ie:
+            error_msg = "Error: Could not import API integration module. Ensure 'api_integrations.py' is accessible."
+            print(f"{error_msg}\nDetails: {ie}")
+            self.github_repo_info_display.setText(error_msg)
+        except ValueError as ve: # Handles GITHUB_PAT not set from api_integrations
+            error_msg = f"Configuration Error: {ve}"
+            print(error_msg)
+            self.github_repo_info_display.setText(error_msg)
+        except Exception as e: # Catches HTTPError and other RequestExceptions from _make_github_request
+            error_msg = f"API Error: Could not fetch repository info for '{repo_name}'.\nDetails: {e}"
+            print(error_msg) # Log the full error to console
+            # Display a user-friendly part of the error.
+            # The exception 'e' from _make_github_request already contains a formatted string.
+            self.github_repo_info_display.setText(str(e))
+        finally:
+            # Clean up path if it was modified, though for multiple calls it might be better to set it once.
+            # This is simplistic for now.
+            if project_root in sys.path and project_root == sys.path[0]: # if we added it
+                 if sys.path[0] == project_root: # Check if it's still the first item
+                    sys.path.pop(0)
 
 
 if __name__ == '__main__':

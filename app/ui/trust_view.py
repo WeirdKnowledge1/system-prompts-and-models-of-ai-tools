@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QGridLayout, QLabel, QLineEdit,
                              QTextEdit, QPushButton, QMessageBox, QListWidget, QFileDialog,
-                             QHBoxLayout, QGroupBox, QListWidgetItem) # Added QListWidgetItem
+                             QHBoxLayout, QGroupBox, QListWidgetItem, QInputDialog, QApplication) # Added QInputDialog, QApplication
 from PyQt6.QtCore import Qt
 import json
 import os
@@ -21,6 +21,7 @@ class TrustView(QWidget):
         self.current_document_path = None
         self.document = MichaudFamilyTrust(name="Untitled Michaud Family Trust")
         self.is_modified = False
+        self.last_conformance_issues = None # To store issues for GitHub reporting
         self._setup_ui()
         self._connect_modification_signals()
 
@@ -99,23 +100,29 @@ class TrustView(QWidget):
         details_layout.addWidget(QLabel("Linked Postal Charter ID:"))
         link_charter_layout = QHBoxLayout()
         self.postal_charter_ref_input = QLineEdit(self.document.postal_charter_ref or "")
-        self.postal_charter_ref_input.setPlaceholderText("Enter ID or leave blank")
+        self.postal_charter_ref_input.setPlaceholderText("Enter ID, relative path, or browse")
         self.postal_charter_ref_input.textChanged.connect(self._update_postal_charter_ref)
         self.browse_charter_button = QPushButton("Browse...")
         self.browse_charter_button.clicked.connect(lambda: self._browse_linked_document("PostalCharter"))
+        self.clear_charter_button = QPushButton("Clear")
+        self.clear_charter_button.clicked.connect(lambda: self._clear_linked_document("PostalCharter"))
         link_charter_layout.addWidget(self.postal_charter_ref_input)
         link_charter_layout.addWidget(self.browse_charter_button)
+        link_charter_layout.addWidget(self.clear_charter_button)
         details_layout.addLayout(link_charter_layout)
 
-        details_layout.addWidget(QLabel("Linked Special Deposit ID:"))
+        details_layout.addWidget(QLabel("Linked Special Deposit Ref:"))
         link_deposit_layout = QHBoxLayout()
         self.special_deposit_ref_input = QLineEdit(self.document.special_deposit_ref or "")
-        self.special_deposit_ref_input.setPlaceholderText("Enter ID or leave blank")
+        self.special_deposit_ref_input.setPlaceholderText("Enter ID, relative path, or browse")
         self.special_deposit_ref_input.textChanged.connect(self._update_special_deposit_ref)
         self.browse_deposit_button = QPushButton("Browse...")
         self.browse_deposit_button.clicked.connect(lambda: self._browse_linked_document("SpecialDeposit"))
+        self.clear_deposit_button = QPushButton("Clear")
+        self.clear_deposit_button.clicked.connect(lambda: self._clear_linked_document("SpecialDeposit"))
         link_deposit_layout.addWidget(self.special_deposit_ref_input)
         link_deposit_layout.addWidget(self.browse_deposit_button)
+        link_deposit_layout.addWidget(self.clear_deposit_button)
         details_layout.addLayout(link_deposit_layout)
 
         details_group.setLayout(details_layout)
@@ -228,7 +235,18 @@ class TrustView(QWidget):
         main_layout.addLayout(file_ops_layout)
         self.conformance_check_button = QPushButton("Run Basic Conformance Check")
         self.conformance_check_button.clicked.connect(self.run_basic_conformance_check)
-        main_layout.addWidget(self.conformance_check_button, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        # Button for creating GitHub issue, initially hidden or managed by conformance check result
+        self.create_github_issue_button = QPushButton("Create GitHub Issue for Conformance Failures")
+        self.create_github_issue_button.clicked.connect(self._create_github_issue_for_conformance)
+        self.create_github_issue_button.setVisible(False) # Only show if there are issues
+
+        conformance_layout = QHBoxLayout()
+        conformance_layout.addWidget(self.conformance_check_button)
+        conformance_layout.addWidget(self.create_github_issue_button)
+        conformance_layout.addStretch()
+        main_layout.addLayout(conformance_layout)
+
         main_layout.addStretch()
         self.load_document_data_into_ui()
 
@@ -583,29 +601,101 @@ class TrustView(QWidget):
         self._collect_data_from_ui()
         main_window_instance = self.window()
         conformer = ClauseConformer(app_context=main_window_instance)
-        issues_report = conformer.check_document_for_basic_issues(self.document)
-        if issues_report:
-            detailed_report = []
+        self.last_conformance_issues = conformer.check_document_for_basic_issues(self.document) # Store for later use
+
+        if self.last_conformance_issues:
+            detailed_report_items = []
             warning_count = 0
             info_count = 0
-            for item in issues_report:
-                detailed_report.append(f"- ID: {item['id'][:15]}... ({item['severity']}): {item['issue']}")
-                if item['severity'] == 'warning': warning_count += 1
-                else: info_count += 1
-            summary = f"{len(issues_report)} issue(s) found: {warning_count} warning(s), {info_count} info."
+            for item in self.last_conformance_issues:
+                detailed_report_items.append(f"- ID: {item.get('id', 'N/A')[:15]}... ({item.get('severity', 'N/A')}): {item.get('issue', 'N/A')}")
+                if item.get('severity') == 'warning':
+                    warning_count += 1
+                else:
+                    info_count += 1
+            summary = f"{len(self.last_conformance_issues)} issue(s) found: {warning_count} warning(s), {info_count} info."
+
+            self.create_github_issue_button.setVisible(True) # Show the button
+
             if is_auto_check:
                 if hasattr(main_window_instance, 'status_bar'):
                     main_window_instance.status_bar.showMessage(f"Conformance: {summary}", 10000)
-                print(f"Auto Conformance Check:\n{summary}\n" + "\n".join(detailed_report))
+                print(f"Auto Conformance Check (Trust):\n{summary}\n" + "\n".join(detailed_report_items))
             else:
-                QMessageBox.warning(self, "Conformance Issues Found", summary + "\n\nDetails:\n" + "\n".join(detailed_report))
+                # Display issues in a custom dialog or a more elaborate QMessageBox if needed,
+                # for now, keep it simple. The button is now separate.
+                QMessageBox.warning(self, "Conformance Issues Found", summary + "\n\nDetails:\n" + "\n".join(detailed_report_items))
         else:
+            self.last_conformance_issues = None # Clear if no issues
+            self.create_github_issue_button.setVisible(False) # Hide button if no issues
             if not is_auto_check:
                 QMessageBox.information(self, "Conformance Check", "No basic conformance issues found.")
             else:
                 if hasattr(main_window_instance, 'status_bar'):
-                     main_window_instance.status_bar.showMessage("Conformance: No basic issues found.", 5000)
-                print("Auto Conformance Check: No basic issues found.")
+                    main_window_instance.status_bar.showMessage("Conformance: No basic issues found.", 5000)
+                print("Auto Conformance Check (Trust): No basic issues found.")
+
+    def _create_github_issue_for_conformance(self):
+        if not self.last_conformance_issues:
+            QMessageBox.information(self, "No Issues", "No conformance issues to report.")
+            return
+
+        repo_name, ok = QInputDialog.getText(self, "GitHub Repository",
+                                             "Enter repository name (owner/repo):")
+        if not ok or not repo_name.strip():
+            QMessageBox.warning(self, "Input Error", "Repository name cannot be empty.")
+            return
+
+        repo_name = repo_name.strip()
+
+        issue_title = f"Conformance Issues in Document: {self.document.name} ({self.document.id})"
+
+        body_parts = ["Conformance issues detected in document:\n"]
+        for item in self.last_conformance_issues:
+            body_parts.append(f"- **Severity:** {item.get('severity', 'N/A')}")
+            body_parts.append(f"  **Clause/Doc ID:** {item.get('id', 'N/A')}")
+            body_parts.append(f"  **Issue:** {item.get('issue', 'N/A')}\n")
+        issue_body = "\n".join(body_parts)
+
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            # --- Temporary direct import path adjustment ---
+            import sys
+            import os
+            project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+            if project_root not in sys.path:
+                sys.path.insert(0, project_root)
+            # --- End temporary path adjustment ---
+            from api_integrations import github_create_issue
+
+            created_issue = github_create_issue(repo_name, issue_title, issue_body)
+            QApplication.restoreOverrideCursor()
+
+            if created_issue and created_issue.get("html_url"):
+                msg_box = QMessageBox(self)
+                msg_box.setIcon(QMessageBox.Icon.Information)
+                msg_box.setWindowTitle("GitHub Issue Created")
+                msg_box.setTextFormat(Qt.TextFormat.RichText) # Allow HTML link
+                msg_box.setText(f"Successfully created GitHub issue in '{repo_name}'.\n"
+                                f"<a href='{created_issue.get('html_url')}'>View Issue: {created_issue.get('number')}</a>")
+                msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+                msg_box.exec()
+            else:
+                QMessageBox.information(self, "GitHub Issue Created",
+                                        f"Issue created in '{repo_name}', but no URL returned or issue data incomplete.")
+        except ImportError as ie:
+            QApplication.restoreOverrideCursor()
+            QMessageBox.critical(self, "Error", f"Could not import API integration module: {ie}")
+        except ValueError as ve: # Catches GITHUB_PAT not set
+            QApplication.restoreOverrideCursor()
+            QMessageBox.critical(self, "Configuration Error", str(ve))
+        except Exception as e: # Catches HTTPError etc.
+            QApplication.restoreOverrideCursor()
+            QMessageBox.critical(self, "API Error", f"Could not create GitHub issue:\n{e}")
+        finally:
+            if 'project_root' in locals() and project_root in sys.path and sys.path[0] == project_root:
+                sys.path.pop(0)
+
 
     def move_clause_up(self):
         current_row = self.clauses_list_widget.currentRow()
@@ -624,6 +714,67 @@ class TrustView(QWidget):
             self._refresh_clause_list_display() # Refresh numbering
             self.clauses_list_widget.setCurrentRow(current_row + 1)
             self._mark_as_modified()
+
+    def _update_postal_charter_ref(self, text: str):
+        self.document.postal_charter_ref = text
+        self._mark_as_modified()
+
+    def _update_special_deposit_ref(self, text: str):
+        self.document.special_deposit_ref = text
+        self._mark_as_modified()
+
+    def _browse_linked_document(self, link_type: str):
+        if link_type == "PostalCharter":
+            doc_dir_name = "charters"
+            file_filter = "Michaud Postal Equity App Charter Files (*.mpea_charter);;All Files (*)"
+            target_input_widget = self.postal_charter_ref_input
+            model_attribute_name = "postal_charter_ref"
+            dialog_title = "Select Linked Postal Charter"
+        elif link_type == "SpecialDeposit":
+            doc_dir_name = "deposits"
+            file_filter = "Michaud Postal Equity App Deposit Files (*.mpea_deposit);;All Files (*)"
+            target_input_widget = self.special_deposit_ref_input
+            model_attribute_name = "special_deposit_ref"
+            dialog_title = "Select Linked Special Deposit Document"
+        else:
+            QMessageBox.warning(self, "Error", f"Unknown link type: {link_type}")
+            return
+
+        start_dir = os.path.join(CODEX_VAULT_DIR, doc_dir_name)
+        os.makedirs(start_dir, exist_ok=True)
+
+        filePath, _ = QFileDialog.getOpenFileName(self, dialog_title, start_dir, file_filter)
+
+        if filePath:
+            # Try to make path relative to CODEX_VAULT_DIR
+            try:
+                relative_path = os.path.relpath(filePath, CODEX_VAULT_DIR)
+                display_path = relative_path
+            except ValueError: # Happens if filePath is on a different drive (Windows)
+                display_path = filePath # Store absolute path if it cannot be made relative
+
+            # If the path is still absolute but within CODEX_VAULT_DIR hierarchy, prefer relative
+            if os.path.isabs(display_path) and filePath.startswith(os.path.abspath(CODEX_VAULT_DIR)):
+                 display_path = os.path.relpath(filePath, CODEX_VAULT_DIR)
+
+
+            target_input_widget.setText(display_path)
+            setattr(self.document, model_attribute_name, display_path) # Updates model via the textChanged signal indirectly too
+            self._mark_as_modified()
+            QMessageBox.information(self, "Link Set", f"{link_type} linked to: {display_path}")
+
+    def _clear_linked_document(self, link_type: str):
+        if link_type == "PostalCharter":
+            self.postal_charter_ref_input.clear()
+            self.document.postal_charter_ref = None
+        elif link_type == "SpecialDeposit":
+            self.special_deposit_ref_input.clear()
+            self.document.special_deposit_ref = None
+        else:
+            return # Should not happen
+        self._mark_as_modified()
+        QMessageBox.information(self, "Link Cleared", f"{link_type} link cleared.")
+
 
 if __name__ == '__main__':
     import sys
