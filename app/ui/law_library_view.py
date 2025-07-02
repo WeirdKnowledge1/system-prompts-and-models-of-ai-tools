@@ -5,6 +5,7 @@ from PyQt6.QtCore import Qt, QDir
 import os
 import shutil # For file copying
 from app.utils.constants import CODEX_VAULT_DIR
+from app.core.document_utils import extract_text_from_pdf # Import PDF extraction utility
 
 LAW_LIBRARY_SUBDIR = "codex_vault_sources/law_library"
 LAW_LIBRARY_PATH = os.path.join(CODEX_VAULT_DIR, LAW_LIBRARY_SUBDIR)
@@ -85,7 +86,7 @@ class LawLibraryView(QWidget):
 
             found_files = []
             for filename in os.listdir(LAW_LIBRARY_PATH):
-                if filename.lower().endswith((".txt", ".md")):
+                if filename.lower().endswith((".txt", ".md", ".pdf")): # Added .pdf
                     full_path = os.path.join(LAW_LIBRARY_PATH, filename)
                     if os.path.isfile(full_path): # Ensure it's a file
                         found_files.append({"name": filename, "path": full_path})
@@ -126,19 +127,26 @@ class LawLibraryView(QWidget):
 
         if file_path and os.path.exists(file_path) and os.path.isfile(file_path):
             try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-
-                # Basic content type differentiation for display (e.g., Markdown vs Plain Text)
-                if file_path.lower().endswith(".md"):
-                    # QTextEdit can render some basic Markdown.
-                    # For more complex rendering, a dedicated Markdown library/widget would be needed.
+                content = ""
+                if file_path.lower().endswith(".pdf"):
+                    content = extract_text_from_pdf(file_path)
+                    if content is None or content.startswith("Error:"): # Check for extraction errors
+                         self.doc_content_viewer.setPlainText(content or "Failed to extract text from PDF.")
+                         return
+                    self.doc_content_viewer.setPlainText(content) # Display extracted PDF text as plain text
+                elif file_path.lower().endswith(".md"):
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
                     self.doc_content_viewer.setMarkdown(content)
-                else: # .txt files
+                elif file_path.lower().endswith(".txt"):
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
                     self.doc_content_viewer.setPlainText(content)
+                else: # Should not happen if only .txt, .md, .pdf are listed
+                    self.doc_content_viewer.setPlainText("Unsupported file type for preview.")
 
-            except UnicodeDecodeError:
-                self.doc_content_viewer.setPlainText(f"Error: Could not decode file '{os.path.basename(file_path)}'.\n"
+            except UnicodeDecodeError: # This applies mainly to .txt and .md if not UTF-8
+                self.doc_content_viewer.setPlainText(f"Error: Could not decode text file '{os.path.basename(file_path)}'.\n"
                                                      "The file may not be UTF-8 encoded or is corrupted.")
             except IOError as e:
                 self.doc_content_viewer.setPlainText(f"Error reading file: {os.path.basename(file_path)}\n{e.strerror}")
@@ -159,9 +167,9 @@ class LawLibraryView(QWidget):
     def _upload_files_to_library(self):
         file_paths, _ = QFileDialog.getOpenFileNames(
             self,
-            "Select Text or Markdown Files to Upload to Law Library",
+            "Select Files to Upload to Law Library", # More general title
             QDir.homePath(), # Start in user's home directory
-            "Text & Markdown Files (*.txt *.md);;All Files (*)"
+            "Supported Files (*.txt *.md *.pdf);;Text Files (*.txt);;Markdown Files (*.md);;PDF Files (*.pdf);;All Files (*)" # Updated filter
         )
 
         if not file_paths:
@@ -238,13 +246,25 @@ class LawLibraryView(QWidget):
             # If the directory doesn't exist, os.listdir will raise FileNotFoundError, caught below.
 
             for filename in os.listdir(LAW_LIBRARY_PATH): # Search current files in directory
-                if filename.lower().endswith((".txt", ".md")):
+                if filename.lower().endswith((".txt", ".md", ".pdf")): # Include .pdf
                     full_path = os.path.join(LAW_LIBRARY_PATH, filename)
                     if os.path.isfile(full_path):
+                        content_to_search = ""
                         try:
-                            with open(full_path, 'r', encoding='utf-8') as f:
-                                content = f.read()
-                            if search_term in content.lower(): # Case-insensitive content check
+                            if filename.lower().endswith(".pdf"):
+                                temp_content = extract_text_from_pdf(full_path)
+                                # Ensure content is a string and not an error message from extraction
+                                if temp_content and not temp_content.startswith("Error:") and \
+                                   not temp_content.startswith("(No text could be extracted"):
+                                    content_to_search = temp_content
+                                else:
+                                    print(f"Skipping PDF '{filename}' in search due to extraction issue or no text: {temp_content}")
+                                    continue # Skip this file for search if content is bad or empty
+                            else: # .txt or .md
+                                with open(full_path, 'r', encoding='utf-8') as f:
+                                    content_to_search = f.read()
+
+                            if content_to_search and search_term in content_to_search.lower(): # Case-insensitive content check
                                 item = QListWidgetItem(filename)
                                 item.setData(Qt.ItemDataRole.UserRole, full_path)
                                 self.doc_list_widget.addItem(item)
@@ -253,6 +273,8 @@ class LawLibraryView(QWidget):
                             print(f"Skipping file due to encoding error during search: {filename}")
                         except IOError:
                             print(f"Skipping file due to IO error during search: {filename}")
+                        except Exception as e_search_file: # Catch other errors during file processing for search
+                            print(f"Error processing file {filename} for search: {e_search_file}")
 
             if matching_files_count == 0:
                 self.doc_list_widget.addItem(QListWidgetItem(f"No documents found containing '{search_term}'."))
@@ -270,6 +292,23 @@ class LawLibraryView(QWidget):
         except Exception as e_gen: # Catch any other unexpected error
             self.doc_list_widget.addItem(QListWidgetItem(f"Unexpected error during search: {str(e_gen)}"))
             self.doc_content_viewer.setPlainText(f"An unexpected error occurred during search.\nError: {str(e_gen)}")
+
+    def perform_search(self, search_term: str):
+        """
+        Public method to trigger a search programmatically.
+        Sets the search term in the input field and simulates a search button click.
+        """
+        self.search_library_input.setText(search_term)
+        self._search_library_documents() # Call the internal search method directly
+        # Optionally, could also programmatically click the button:
+        # self.search_library_button.click()
+
+        # Ensure the content viewer is updated appropriately after programmatic search
+        if self.doc_list_widget.count() > 0 and self.doc_list_widget.item(0).text().startswith("No documents found containing"):
+            self.doc_content_viewer.setPlainText(f"No results for '{search_term}'.")
+        elif self.doc_list_widget.count() > 0 :
+             self.doc_content_viewer.setPlainText(f"{self.doc_list_widget.count()} document(s) found containing '{search_term}'. Select one to view.")
+        # else: it might show "Error accessing library" etc. from _search_library_documents if that failed.
 
 
 if __name__ == '__main__':

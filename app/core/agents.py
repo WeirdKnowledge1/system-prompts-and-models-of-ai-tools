@@ -12,6 +12,8 @@ import hashlib # For hashing clause text in VeritasProof
 from app.core.document_utils import generate_display_clause_numbers # Import for numbering checks
 # Need Clause type hint for VeritasProof
 from app.core.clause_model import Clause
+# For semantic similarity in ClauseConformer
+from app.core.nlp_utils import calculate_tfidf_cosine_similarity, SKLEARN_AVAILABLE
 
 class BaseAgent:
     """
@@ -80,8 +82,20 @@ class PostalEquityAppAI(BaseAgent):
                         summary = f"Conformance check for '{context_document.name}' found {len(issues)} issue(s)."
                         add_dashboard_notification(summary)
                         for i, issue_item in enumerate(issues):
-                            issue_msg = f"  Issue {i+1}: {issue_item.get('issue', 'No details')} " \
-                                        f"(Severity: {issue_item.get('severity', 'N/A')}, ID: {issue_item.get('id', 'N/A')[:10]}...)"
+                            issue_prefix = f"  Issue {i+1}: "
+                            issue_text = issue_item.get('issue', 'No details')
+                            severity = issue_item.get('severity', 'N/A')
+
+                            # Handle different ID structures
+                            id_info = ""
+                            if issue_item.get('type') == "semantic_similarity":
+                                ids_involved = issue_item.get('ids', [])
+                                id_info = f"(Involves IDs: {', '.join([id_val[:8] + '...' for id_val in ids_involved])})"
+                            else:
+                                id_info = f"(ID: {issue_item.get('id', 'N/A')[:10]}...)"
+
+                            issue_msg = f"{issue_prefix}{issue_text} (Severity: {severity}) {id_info}"
+
                             if "suggestions" in issue_item and issue_item["suggestions"]:
                                 issue_msg += "\n    Suggestions:"
                                 for sugg in issue_item["suggestions"]:
@@ -107,6 +121,45 @@ class PostalEquityAppAI(BaseAgent):
                                "- 'help': Shows this help message."
             add_dashboard_notification("Displaying help for Master AI commands.")
             # For more complex help, could return a structured object or specific UI update signal.
+
+        elif command_lower.startswith("search law library for ") or command_lower.startswith("find in library "):
+            search_term = ""
+            if command_lower.startswith("search law library for "):
+                search_term = command.split("search law library for ", 1)[1].strip()
+            elif command_lower.startswith("find in library "):
+                search_term = command.split("find in library ", 1)[1].strip()
+
+            if search_term:
+                if self.app_context and hasattr(self.app_context, 'law_library_view') and \
+                   hasattr(self.app_context.law_library_view, 'perform_search'):
+
+                    # Switch to the Law Library tab
+                    if hasattr(self.app_context, 'tab_widget') and hasattr(self.app_context, 'law_library_view'):
+                        try:
+                            law_lib_tab_index = -1
+                            for i in range(self.app_context.tab_widget.count()):
+                                if self.app_context.tab_widget.widget(i) == self.app_context.law_library_view:
+                                    law_lib_tab_index = i
+                                    break
+                            if law_lib_tab_index != -1:
+                                self.app_context.tab_widget.setCurrentIndex(law_lib_tab_index)
+                            else:
+                                add_dashboard_notification("Could not find Law Library tab to switch to.")
+                        except Exception as e_tab:
+                             add_dashboard_notification(f"Error switching to Law Library tab: {e_tab}")
+
+                    self.app_context.law_library_view.perform_search(search_term)
+                    msg = f"Law Library search for '{search_term}' initiated. Check the 'Law Library & Codex' tab."
+                    add_dashboard_notification(msg)
+                    response_message = msg
+                else:
+                    no_view_msg = "Law Library view or search function not available."
+                    add_dashboard_notification(no_view_msg)
+                    response_message = no_view_msg
+            else:
+                no_term_msg = "No search term provided for Law Library search."
+                add_dashboard_notification(no_term_msg)
+                response_message = no_term_msg
 
         else:
             unrec_msg = f"Unrecognized command: '{command}'. Type 'help' for available commands."
@@ -298,13 +351,76 @@ class ClauseConformer(BaseAgent):
                     })
                     break # Only report one type of cross-ref finding per clause for this basic check
 
+        # New Check 6: Semantic Similarity between clauses in the same document
+        if SKLEARN_AVAILABLE and document_obj.clauses and len(document_obj.clauses) >= 2:
+            # Create a list of (clause_id, clause_text, display_number_if_available)
+            # Display numbers are helpful for user reporting
+            clause_texts_with_ids = []
+            display_numbers_for_similarity = generate_display_clause_numbers(document_obj.clauses) # Get once
+            for idx, c_obj in enumerate(document_obj.clauses):
+                # Use display number if possible, otherwise index for reference in message
+                ref_label = display_numbers_for_similarity[idx] if idx < len(display_numbers_for_similarity) else f"Clause {idx+1}"
+                clause_texts_with_ids.append((c_obj.id, c_obj.text, ref_label))
+
+            # Iterate through unique pairs of clauses
+            # To avoid redundant checks (A,B) vs (B,A) and self-check (A,A)
+            # Also, to avoid multiple reports for the same pair, track reported pairs.
+            reported_similar_pairs = set()
+
+            for i in range(len(clause_texts_with_ids)):
+                for j in range(i + 1, len(clause_texts_with_ids)):
+                    id1, text1, label1 = clause_texts_with_ids[i]
+                    id2, text2, label2 = clause_texts_with_ids[j]
+
+                    # Ensure we haven't reported this pair already (e.g. if IDs are sorted)
+                    pair_key = tuple(sorted((id1, id2)))
+                    if pair_key in reported_similar_pairs:
+                        continue
+
+                    # Skip if either text is very short, as TF-IDF might give spurious high scores
+                    if len(text1.split()) < 5 or len(text2.split()) < 5: # Min 5 words to compare
+                        continue
+
+                    similarity_score = calculate_tfidf_cosine_similarity(text1, text2)
+
+                    # Define a threshold for reporting similarity
+                    SIMILARITY_THRESHOLD = 0.85 # Configurable, e.g. 0.85 for reasonably high similarity
+
+                    if similarity_score >= SIMILARITY_THRESHOLD:
+                        issues_report.append({
+                            "type": "semantic_similarity", # New issue type
+                            "ids": [id1, id2], # List of involved clause IDs
+                            "issue": f"Clauses '{label1}' (ID: {id1[:8]}...) and '{label2}' (ID: {id2[:8]}...) "
+                                     f"are very similar (Score: {similarity_score:.2f}). "
+                                     "Consider consolidating or differentiating them.",
+                            "severity": "info", # Or 'warning' if threshold is very high
+                            "similarity_score": similarity_score,
+                            "suggestions": [
+                                "Review both clauses to determine if they are redundant.",
+                                "If their intent is different, try to rephrase one or both for clarity.",
+                                "Consider merging them if they serve the same purpose."
+                            ]
+                        })
+                        reported_similar_pairs.add(pair_key)
+        elif not SKLEARN_AVAILABLE and document_obj.clauses and len(document_obj.clauses) >=2 :
+            # Add a one-time info message if scikit-learn is not available for this check
+            if not any(item.get("type") == "sklearn_missing_for_similarity" for item in issues_report):
+                 issues_report.append({
+                    "id": document_obj.id, # Document level info
+                    "type": "sklearn_missing_for_similarity",
+                    "issue": "Semantic similarity check between clauses was skipped because 'scikit-learn' library is not installed.",
+                    "severity": "info"
+                })
+
 
         if not issues_report:
             print(f"{self.agent_name}: No basic issues found in {document_obj.name}.")
         else:
             print(f"{self.agent_name}: Found {len(issues_report)} basic issue(s) in {document_obj.name}.")
-            for issue_item in issues_report:
-                print(f"  - ID: {issue_item['id']}, Severity: {issue_item['severity']}, Issue: {issue_item['issue']}")
+            for issue_item in issues_report: # Updated print for potentially new structure
+                print(f"  - IDs: {issue_item.get('ids', issue_item.get('id'))}, Type: {issue_item.get('type', 'N/A')}, Severity: {issue_item['severity']}, Issue: {issue_item['issue']}")
+                if "suggestions" in issue_item and issue_item["suggestions"]:
+                    for sugg in issue_item["suggestions"]: print(f"    Suggestion: {sugg}")
 
         self.set_status("Idle")
         return issues_report

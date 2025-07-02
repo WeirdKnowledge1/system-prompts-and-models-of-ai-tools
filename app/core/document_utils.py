@@ -206,6 +206,116 @@ if __name__ == '__main__':
     # For FT.3.2.4, we'd need document prefix and more structured section/subsection objects.
     # For now, this function will provide a basic multi-level numbering.
 
+
+# --- PDF Text Extraction Utility ---
+try:
+    from PyPDF2 import PdfReader
+    PYPDF2_AVAILABLE = True
+except ImportError:
+    PYPDF2_AVAILABLE = False
+    PdfReader = None # To avoid NameError if not available
+
+def extract_text_from_pdf(pdf_path: str) -> str | None:
+    """
+    Extracts text content from a PDF file using PyPDF2.
+    Returns the extracted text as a string, or None if an error occurs or PyPDF2 is not available.
+    """
+    if not PYPDF2_AVAILABLE:
+        print("PyPDF2 library is not installed. Cannot extract text from PDF.")
+        return "Error: PDF processing library (PyPDF2) not available." # Return error message
+
+    if not os.path.exists(pdf_path):
+        print(f"Error: PDF file not found at {pdf_path}")
+        return "Error: PDF file not found."
+
+    try:
+        text_content = []
+        with open(pdf_path, 'rb') as f:
+            reader = PdfReader(f)
+            for page in reader.pages:
+                text_content.append(page.extract_text() or "") # Ensure None is handled as empty string
+
+        full_text = "\n".join(text_content).strip()
+        if not full_text:
+            return "(No text could be extracted from this PDF or PDF is image-based)"
+        return full_text
+    except Exception as e:
+        print(f"Error extracting text from PDF {pdf_path}: {e}")
+        return f"Error extracting text from PDF: {e}"
+
+
+if __name__ == '__main__':
+    # Mock Clause class for testing
+    class MockClause:
+        def __init__(self, text, level=1, section_title=None, clause_id="test-id", jurisdiction="test-jur", origin="test-org"):
+            self.text = text
+            self.level = max(1,level)
+            self.section_title = section_title
+            self.id = clause_id
+            self.jurisdiction = jurisdiction
+            self.origin = origin
+            self.creation_date = datetime.datetime.now().isoformat()
+            self.last_modified_date = self.creation_date
+            self.version = 1
+            self.metadata = {}
+
+
+    clauses_test = [
+        MockClause("Intro text", level=1, section_title="Introduction"),
+        MockClause("First point of intro", level=2),
+        MockClause("Second point of intro", level=2),
+        MockClause("Sub-point of second", level=3),
+        MockClause("Another main point", level=1),
+        MockClause("Details for this point", level=2),
+        MockClause("Part B", level=1, section_title="Main Part B"),
+        MockClause("First sub of B", level=2),
+        MockClause("Second sub of B, with its own title", level=2, section_title="Definitions"),
+        MockClause("Def 1", level=3),
+        MockClause("Def 2", level=3),
+        MockClause("Another L1 clause", level=1),
+        MockClause("Another L1 clause with title", level=1, section_title="Conclusion"),
+    ]
+
+    numbers = generate_display_clause_numbers(clauses_test)
+    print("Generated Clause Numbers:")
+    for i, num_str in enumerate(numbers):
+        print(f"{num_str} (Text: {clauses_test[i].text[:30]}...)")
+
+    # Expected rough output:
+    # SECTION I: Introduction (Text: Intro text...)
+    # I.a. (Text: First point of intro...)
+    # I.b. (Text: Second point of intro...)
+    # I.b.1. (Text: Sub-point of second...)
+    # 1. (Text: Another main point...)  <-- Reset from Roman due to no title L1
+    # 1.1. (Text: Details for this point...)
+    # SECTION II: Main Part B (Text: Part B...)
+    # II.a. (Text: First sub of B...)
+    # B. Definitions (Text: Second sub of B, with its own...) <-- L2 with title
+    # B.1. (Text: Def 1...)
+    # B.2. (Text: Def 2...)
+    # 2. (Text: Another L1 clause...)
+    # SECTION III: Conclusion (Text: Another L1 clause with title...)
+
+    # The current logic is a bit simpler than the expected output above,
+    # specifically around mixing Roman/Alpha with pure numeric based on context.
+    # The current output will be more like:
+    # SECTION I: Introduction
+    # I.1.
+    # I.2.
+    # I.2.1.
+    # 1.  <-- This is where it might differ if not carefully handled
+    # 1.1.
+    # SECTION II: Main Part B
+    # II.1.
+    # A. Definitions
+    # A.1.
+    # A.2.
+    # 2.
+    # SECTION III: Conclusion
+    # This simplified scheme is a starting point.
+    # The Part VIII. Sec IV "FT.3.2.4" is more like a prefix + path, which this doesn't do yet.
+    # This function provides basic outline style numbering.
+
     print("\n---\nTest with simpler structure (no L1 section titles first):")
     clauses_test_2 = [
         MockClause("Clause 1, Level 1", level=1),

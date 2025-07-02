@@ -537,7 +537,19 @@ class DepositView(QWidget):
             warning_count = 0
             info_count = 0
             for item in self.last_conformance_issues:
-                issue_detail_line = f"- ID: {item.get('id', 'N/A')[:15]}... ({item.get('severity', 'N/A')}): {item.get('issue', 'N/A')}"
+                issue_text = item.get('issue', 'N/A')
+                severity = item.get('severity', 'N/A')
+                item_type = item.get('type', None)
+
+                id_display = ""
+                if item_type == "semantic_similarity":
+                    ids_involved = item.get('ids', [])
+                    id_display = f" (Involves Clause IDs: {', '.join([id_val[:8] + '...' for id_val in ids_involved])})"
+                else: # Default to single ID if available
+                    id_display = f" (ID: {item.get('id', 'N/A')[:15]}...)"
+
+                issue_detail_line = f"- ({severity}){id_display}: {issue_text}"
+
                 if "suggestions" in item and item["suggestions"]:
                     issue_detail_line += "\n  Suggestions:"
                     for sugg in item["suggestions"]:
