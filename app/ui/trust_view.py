@@ -584,10 +584,13 @@ class TrustView(QWidget):
             if hasattr(main_window_instance, 'settings_view') and \
                main_window_instance.settings_view.get_setting("qr_proof_chain_embeds_enabled"):
                 veritas = VeritasProof(app_context=main_window_instance)
-                qr_data = f"ClauseID: {clause_obj.id}\nJurisdiction: {clause_obj.jurisdiction}\nOrigin: {clause_obj.origin}\nText: {clause_obj.text[:100]}..."
-                pixmap = veritas.generate_qr_for_text(qr_data)
+
+                current_user_id = getattr(main_window_instance, 'current_user_id', None)
+                current_doc_id = self.document.id if self.document else None
+
+                pixmap = veritas.generate_clause_proof_qr(clause_obj, current_user_id, current_doc_id)
                 if pixmap:
-                    dialog = QRDisplayDialog(pixmap, title=f"QR Code - Clause {clause_obj.id}", parent=self)
+                    dialog = QRDisplayDialog(pixmap, title=f"Proof QR - Clause {clause_obj.id}", parent=self)
                     dialog.exec()
                 else:
                     QMessageBox.warning(self, "QR Generation Failed", "Could not generate QR code for the selected clause.")
@@ -608,7 +611,13 @@ class TrustView(QWidget):
             warning_count = 0
             info_count = 0
             for item in self.last_conformance_issues:
-                detailed_report_items.append(f"- ID: {item.get('id', 'N/A')[:15]}... ({item.get('severity', 'N/A')}): {item.get('issue', 'N/A')}")
+                issue_detail_line = f"- ID: {item.get('id', 'N/A')[:15]}... ({item.get('severity', 'N/A')}): {item.get('issue', 'N/A')}"
+                if "suggestions" in item and item["suggestions"]:
+                    issue_detail_line += "\n  Suggestions:"
+                    for sugg in item["suggestions"]:
+                        issue_detail_line += f"\n    - {sugg}"
+                detailed_report_items.append(issue_detail_line)
+
                 if item.get('severity') == 'warning':
                     warning_count += 1
                 else:

@@ -17,7 +17,9 @@ from .dashboard_view import DashboardView
 from .law_library_view import LawLibraryView # Import the new view
 from app.ui.dialogs.personal_info_dialog import PersonalInfoDialog
 from .ledger_view import LedgerView
-from app.core.daily_assistant_agent import DailyAssistantAgent # Import DailyAssistantAgent
+# Import core agents
+from app.core.agents import PostalEquityAppAI # Master AI
+from app.core.daily_assistant_agent import DailyAssistantAgent
 from app.utils.constants import (DOC_TRUST, DOC_CHARTER, DOC_DEPOSIT,
                                  COLOR_EQUITY, COLOR_POSTAL, COLOR_NATURAL_LAW, COLOR_DEFAULT_BG)
 from app.ui.trust_view import TrustView
@@ -64,6 +66,13 @@ class MainWindow(QMainWindow):
         self._ensure_data_directories_exist()
         self._load_and_apply_stylesheet() # Load QSS first
         self._apply_initial_styling() # Then apply dynamic/jurisdictional styles
+
+        # Initialize Master AI Agent
+        self.master_ai_agent = PostalEquityAppAI(app_context=self)
+        # Pass the dashboard reference to the master_ai_agent if it needs to directly update it,
+        # or handle updates via signals/slots or methods on MainWindow.
+        # For now, Master AI can use app_context (MainWindow) to find dashboard_view.
+
         self._setup_auto_save_timer()
         self._run_daily_assistant_on_startup()
 

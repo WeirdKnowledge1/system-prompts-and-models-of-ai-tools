@@ -533,9 +533,19 @@ class DepositView(QWidget):
         self.last_conformance_issues = conformer.check_document_for_basic_issues(self.document)
 
         if self.last_conformance_issues:
-            detailed_report_items = [f"- ID: {item.get('id', 'N/A')[:15]}... ({item.get('severity', 'N/A')}): {item.get('issue', 'N/A')}" for item in self.last_conformance_issues]
-            warning_count = sum(1 for item in self.last_conformance_issues if item.get('severity') == 'warning')
-            info_count = len(self.last_conformance_issues) - warning_count
+            detailed_report_items = []
+            warning_count = 0
+            info_count = 0
+            for item in self.last_conformance_issues:
+                issue_detail_line = f"- ID: {item.get('id', 'N/A')[:15]}... ({item.get('severity', 'N/A')}): {item.get('issue', 'N/A')}"
+                if "suggestions" in item and item["suggestions"]:
+                    issue_detail_line += "\n  Suggestions:"
+                    for sugg in item["suggestions"]:
+                        issue_detail_line += f"\n    - {sugg}"
+                detailed_report_items.append(issue_detail_line)
+
+                if item.get('severity') == 'warning': warning_count += 1
+                else: info_count += 1
             summary = f"{len(self.last_conformance_issues)} issue(s) found: {warning_count} warning(s), {info_count} info."
 
             self.create_github_issue_button.setVisible(True)

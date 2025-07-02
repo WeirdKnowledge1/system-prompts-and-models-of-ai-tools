@@ -63,6 +63,32 @@ class DashboardView(QWidget):
 
         main_layout.addLayout(mid_layout)
 
+        # --- Master AI Command Group ---
+        master_ai_command_group = QGroupBox("Master AI Command Interface")
+        master_ai_layout = QVBoxLayout()
+
+        command_input_layout = QHBoxLayout()
+        self.master_ai_command_input = QLineEdit()
+        self.master_ai_command_input.setPlaceholderText("Enter command for Master AI (e.g., 'validate current document')...")
+        self.submit_master_ai_command_button = QPushButton("Send Command")
+        self.submit_master_ai_command_button.clicked.connect(self._send_command_to_master_ai)
+
+        command_input_layout.addWidget(self.master_ai_command_input, 1)
+        command_input_layout.addWidget(self.submit_master_ai_command_button)
+        master_ai_layout.addLayout(command_input_layout)
+
+        # Optional: A small area for direct Master AI responses or status, separate from notifications
+        # self.master_ai_response_display = QTextEdit()
+        # self.master_ai_response_display.setReadOnly(True)
+        # self.master_ai_response_display.setPlaceholderText("Master AI responses/status...")
+        # self.master_ai_response_display.setFixedHeight(80)
+        # master_ai_layout.addWidget(self.master_ai_response_display)
+
+        master_ai_command_group.setLayout(master_ai_layout)
+        main_layout.addWidget(master_ai_command_group)
+        # --- End Master AI Command Group ---
+
+
         # GitHub Tools Group
         github_tools_group = QGroupBox("GitHub Repository Tools")
         github_tools_layout = QVBoxLayout()
@@ -168,6 +194,47 @@ class DashboardView(QWidget):
 
     def update_memory_summary(self, summary_text: str):
         self.memory_summary_text.setPlainText(summary_text)
+
+    def _send_command_to_master_ai(self):
+        command_text = self.master_ai_command_input.text().strip()
+        if not command_text:
+            self.add_notification("Master AI Command Error: Command cannot be empty.")
+            return
+
+        self.add_notification(f"Sending to Master AI: '{command_text}'")
+        QApplication.processEvents()
+
+        main_window = self.window() # Get reference to MainWindow
+        if not hasattr(main_window, 'master_ai_agent') or not main_window.master_ai_agent:
+            self.add_notification("Master AI Error: Master AI Agent not initialized in MainWindow.")
+            return
+
+        try:
+            # The Master AI's interpret_command might need context, like the current document
+            # This context needs to be determined by MainWindow or passed appropriately
+            active_doc_view = main_window._get_active_document_view()
+            context_document_obj = active_doc_view.document if active_doc_view else None
+
+            # The interpret_command in PostalEquityAppAI currently returns a string.
+            # We want it to potentially return structured data or trigger further actions
+            # that result in notifications.
+            # For now, we assume it might return a direct response string or None if it posts its own notifications.
+            response = main_window.master_ai_agent.interpret_command(command_text, context_document=context_document_obj)
+
+            if response: # If Master AI returns a direct textual response
+                self.add_notification(f"Master AI Response: {response}")
+
+            # If the command was 'validate current document', the Master AI (or ClauseConformer via MasterAI)
+            # might have added its own detailed notifications.
+            # The dashboard's notification list will show these.
+
+            self.master_ai_command_input.clear() # Clear input after sending
+
+        except Exception as e:
+            error_msg = f"Error processing Master AI command: {e}"
+            print(error_msg)
+            self.add_notification(error_msg)
+
 
     def _fetch_github_repo_info(self):
         repo_name = self.github_repo_input.text().strip()

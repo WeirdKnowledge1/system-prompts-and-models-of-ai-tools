@@ -636,10 +636,13 @@ class CharterView(QWidget):
             if hasattr(main_window_instance, 'settings_view') and \
                main_window_instance.settings_view.get_setting("qr_proof_chain_embeds_enabled"):
                 veritas = VeritasProof(app_context=main_window_instance)
-                qr_data = f"ClauseID: {clause_obj.id}\nText: {clause_obj.text[:100]}..."
-                pixmap = veritas.generate_qr_for_text(qr_data)
+
+                current_user_id = getattr(main_window_instance, 'current_user_id', None)
+                current_doc_id = self.document.id if self.document else None
+
+                pixmap = veritas.generate_clause_proof_qr(clause_obj, current_user_id, current_doc_id)
                 if pixmap:
-                    dialog = QRDisplayDialog(pixmap, title=f"QR Code - Clause {clause_obj.id}", parent=self)
+                    dialog = QRDisplayDialog(pixmap, title=f"Proof QR - Clause {clause_obj.id}", parent=self)
                     dialog.exec()
                 else: QMessageBox.warning(self, "QR Generation Failed", "Could not generate QR code.")
             else: QMessageBox.information(self, "QR Generation Disabled", "Enable 'QR Proof Chain Embeds' in Settings.")
@@ -662,9 +665,19 @@ class CharterView(QWidget):
         self.last_conformance_issues = conformer.check_document_for_basic_issues(self.document) # Store
 
         if self.last_conformance_issues:
-            detailed_report_items = [f"- ID: {item.get('id', 'N/A')[:15]}... ({item.get('severity', 'N/A')}): {item.get('issue', 'N/A')}" for item in self.last_conformance_issues]
-            warning_count = sum(1 for item in self.last_conformance_issues if item.get('severity') == 'warning')
-            info_count = len(self.last_conformance_issues) - warning_count
+            detailed_report_items = []
+            warning_count = 0
+            info_count = 0
+            for item in self.last_conformance_issues:
+                issue_detail_line = f"- ID: {item.get('id', 'N/A')[:15]}... ({item.get('severity', 'N/A')}): {item.get('issue', 'N/A')}"
+                if "suggestions" in item and item["suggestions"]:
+                    issue_detail_line += "\n  Suggestions:"
+                    for sugg in item["suggestions"]:
+                        issue_detail_line += f"\n    - {sugg}"
+                detailed_report_items.append(issue_detail_line)
+
+                if item.get('severity') == 'warning': warning_count += 1
+                else: info_count += 1
             summary = f"{len(self.last_conformance_issues)} issue(s) found: {warning_count} warning(s), {info_count} info."
 
             self.create_github_issue_button.setVisible(True) # Show button

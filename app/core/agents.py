@@ -6,8 +6,12 @@ import os
 import datetime
 import re # For regex-based cross-reference search
 import shutil # For file copying in AutoBackup
+import json # For VeritasProof proof object
+import hashlib # For hashing clause text in VeritasProof
 
 from app.core.document_utils import generate_display_clause_numbers # Import for numbering checks
+# Need Clause type hint for VeritasProof
+from app.core.clause_model import Clause
 
 class BaseAgent:
     """
@@ -44,12 +48,77 @@ class PostalEquityAppAI(BaseAgent):
 
     def interpret_command(self, command: str, context_document=None):
         self.set_status(f"Interpreting command: {command}")
-        # Placeholder: In future, parse command and delegate to other agents or methods
-        # e.g., if command is "validate document X", call ClauseConformer
-        # e.g., if command is "explain clause Y", access Codex Vault and clause data
-        print(f"{self.agent_name}: Received command '{command}' for document '{context_document}'.")
+        command_lower = command.lower()
+        response_message = f"Command '{command}' processed." # Default response
+
+        # Ensure app_context and dashboard_view are available for notifications
+        dashboard_view = None
+        if self.app_context and hasattr(self.app_context, 'dashboard_view'):
+            dashboard_view = self.app_context.dashboard_view
+
+        def add_dashboard_notification(message):
+            if dashboard_view and hasattr(dashboard_view, 'add_notification'):
+                dashboard_view.add_notification(f"MasterAI: {message}")
+            else:
+                print(f"MasterAI Notification (no dashboard): {message}")
+
+        if "validate" in command_lower or "check conformity" in command_lower or "conform" in command_lower:
+            if context_document:
+                add_dashboard_notification(f"Initiating conformance check for document: {context_document.name}")
+                try:
+                    conformer = ClauseConformer(app_context=self.app_context)
+                    # Ensure the document object has its data collected if it's from a view
+                    # This might require the view to have a method like `get_current_document_data_for_agent`
+                    # For now, assume context_document is up-to-date.
+                    # If the document view has `_collect_data_from_ui`, it should be called before this.
+                    # The `_send_command_to_master_ai` in DashboardView tries to pass active_doc_view.document
+                    # We assume this document object is sufficiently current.
+
+                    issues = conformer.check_document_for_basic_issues(context_document)
+
+                    if issues:
+                        summary = f"Conformance check for '{context_document.name}' found {len(issues)} issue(s)."
+                        add_dashboard_notification(summary)
+                        for i, issue_item in enumerate(issues):
+                            issue_msg = f"  Issue {i+1}: {issue_item.get('issue', 'No details')} " \
+                                        f"(Severity: {issue_item.get('severity', 'N/A')}, ID: {issue_item.get('id', 'N/A')[:10]}...)"
+                            if "suggestions" in issue_item and issue_item["suggestions"]:
+                                issue_msg += "\n    Suggestions:"
+                                for sugg in issue_item["suggestions"]:
+                                    issue_msg += f"\n      - {sugg}"
+                            add_dashboard_notification(issue_msg)
+                        response_message = summary + " See dashboard notifications for details."
+                    else:
+                        summary = f"No conformance issues found in '{context_document.name}'."
+                        add_dashboard_notification(summary)
+                        response_message = summary
+                except Exception as e:
+                    error_msg = f"Error during conformance check: {e}"
+                    add_dashboard_notification(error_msg)
+                    response_message = error_msg
+            else:
+                no_doc_msg = "No active document context to validate. Please open or select a document."
+                add_dashboard_notification(no_doc_msg)
+                response_message = no_doc_msg
+
+        elif "help" in command_lower:
+            response_message = "Available commands:\n" \
+                               "- 'validate current document' / 'check conformity': Runs conformance check on active document.\n" \
+                               "- 'help': Shows this help message."
+            add_dashboard_notification("Displaying help for Master AI commands.")
+            # For more complex help, could return a structured object or specific UI update signal.
+
+        else:
+            unrec_msg = f"Unrecognized command: '{command}'. Type 'help' for available commands."
+            add_dashboard_notification(unrec_msg)
+            response_message = unrec_msg
+
         self.set_status("Idle")
-        return f"Command '{command}' acknowledged by Master AI. (Placeholder response)"
+        # The DashboardView's _send_command_to_master_ai method will also add this response if returned.
+        # It's fine if it's a bit redundant for now, or one could be prioritized.
+        # Returning None here would mean only notifications posted by MasterAI itself appear.
+        return response_message
+
 
     def rewrite_own_logic_from_zip(self, zip_path: str):
         self.set_status(f"Attempting to rewrite logic from ZIP: {zip_path}")
@@ -105,20 +174,32 @@ class ClauseConformer(BaseAgent):
                 issues_report.append({
                     "id": clause.id,
                     "issue": f"Clause {i+1} has empty text.",
-                    "severity": "warning"
+                    "severity": "warning",
+                    "suggestions": [
+                        "Provide the full intended text for this clause.",
+                        "If this clause is no longer needed, consider deleting it."
+                    ]
                 })
             # Check 2: Clause length (new)
             elif len(clause.text.strip()) < 10:
                  issues_report.append({
                     "id": clause.id,
                     "issue": f"Clause {i+1} text is very short ({len(clause.text.strip())} chars). Review for completeness.",
-                    "severity": "info"
+                    "severity": "info",
+                    "suggestions": [
+                        "Ensure the clause text adequately covers its intended purpose.",
+                        "Consider expanding the clause for clarity or legal sufficiency."
+                    ]
                 })
             elif len(clause.text.strip()) > 1000: # Example length, can be configured
                  issues_report.append({
                     "id": clause.id,
                     "issue": f"Clause {i+1} text is very long ({len(clause.text.strip())} chars). Review for conciseness.",
-                    "severity": "info"
+                    "severity": "info",
+                    "suggestions": [
+                        "Review for conciseness and clarity. Can it be broken down?",
+                        "Ensure there is no redundant information."
+                    ]
                 })
 
 
@@ -309,6 +390,48 @@ class VeritasProof(BaseAgent):
         # For this example, we'll use the string as is.
 
         return self.generate_qr_for_text(proof_data_str)
+
+    def generate_clause_proof_qr(self, clause_object: Clause, user_id: int | str | None, doc_id: str | None = None) -> QPixmap | None:
+        """
+        Generates a QR code containing a JSON proof object for a clause.
+        """
+        self.set_status(f"Generating proof QR for Clause ID: {clause_object.id}")
+        if not clause_object:
+            self.log_error("No clause object provided for proof generation.")
+            return None
+
+        # 1. Define Proof Object Structure & Construct it
+        clause_text_hash = hashlib.sha256(clause_object.text.encode('utf-8')).hexdigest()
+
+        proof_object = {
+            "doc_id": doc_id or "UNKNOWN_DOC_ID", # Document ID should ideally be passed or retrieved from clause context
+            "clause_id": clause_object.id,
+            "clause_text_hash": clause_text_hash, # SHA256 hash of the clause text
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(), # UTC timestamp
+            "user_id": user_id or "ANONYMOUS", # User ID from login session
+            "version": clause_object.version, # Clause version
+            "jurisdiction": clause_object.jurisdiction, # Clause jurisdiction
+            "origin": clause_object.origin, # Clause origin
+            "schema_version": "1.0.0" # Version of this proof object schema
+        }
+
+        # 2. Serialize to JSON string
+        try:
+            json_proof_string = json.dumps(proof_object, sort_keys=True) # Sort keys for consistent hashing if QR itself is hashed
+        except TypeError as e:
+            self.log_error(f"Could not serialize proof object to JSON: {e}")
+            return None
+
+        # 3. Generate QR code for the JSON string
+        qr_pixmap = self.generate_qr_for_text(json_proof_string)
+
+        if qr_pixmap:
+            self.set_status("Idle - Proof QR generated.")
+        else:
+            # generate_qr_for_text would have logged its own error
+            self.set_status("Error - Proof QR generation failed.")
+
+        return qr_pixmap
 
 
 class DriftGuard(BaseAgent):
