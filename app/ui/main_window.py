@@ -26,10 +26,13 @@ from app.ui.deposit_view import DepositView
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, current_username: str | None = None, current_user_id: int | None = None):
         super().__init__()
         self.setWindowTitle("Michaud Postal Equity App - MPEA")
         self.setGeometry(100, 100, 1200, 800)
+
+        self.current_username = current_username
+        self.current_user_id = current_user_id
 
         self.tab_widget = QTabWidget()
         self.setCentralWidget(self.tab_widget)
@@ -59,7 +62,8 @@ class MainWindow(QMainWindow):
         self._create_menu_bar()
         self._create_status_bar()
         self._ensure_data_directories_exist()
-        self._apply_initial_styling()
+        self._load_and_apply_stylesheet() # Load QSS first
+        self._apply_initial_styling() # Then apply dynamic/jurisdictional styles
         self._setup_auto_save_timer()
         self._run_daily_assistant_on_startup()
 
@@ -528,7 +532,37 @@ class MainWindow(QMainWindow):
     def _create_status_bar(self):
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
-        self.status_bar.showMessage("Ready.")
+        if self.current_username:
+            self.status_bar.showMessage(f"Ready | User: {self.current_username} (ID: {self.current_user_id})")
+        else:
+            self.status_bar.showMessage("Ready | User: Guest (Not Logged In)")
+
+    def _load_and_apply_stylesheet(self):
+        """Loads the QSS stylesheet and applies it to the application."""
+        try:
+            # Determine the path to style.qss relative to main_window.py
+            # main_window.py is in app/ui/, style.qss is in app/ui/
+            style_sheet_path = os.path.join(os.path.dirname(__file__), "style.qss")
+
+            if not os.path.exists(style_sheet_path):
+                print(f"Warning: Stylesheet file not found at {style_sheet_path}")
+                if hasattr(self, 'status_bar'):
+                    self.status_bar.showMessage("Stylesheet not found. Using default styles.", 5000)
+                return
+
+            with open(style_sheet_path, "r") as f_style:
+                stylesheet = f_style.read()
+
+            QApplication.instance().setStyleSheet(stylesheet) # Apply to the whole application
+            print("Stylesheet applied successfully.")
+            if hasattr(self, 'status_bar'):
+                 self.status_bar.showMessage("Theme loaded.", 3000)
+
+        except Exception as e:
+            print(f"Error loading or applying stylesheet: {e}")
+            if hasattr(self, 'status_bar'):
+                self.status_bar.showMessage(f"Error loading theme: {e}", 5000)
+
 
     def show_about_dialog(self):
         QMessageBox.about(self, "About Michaud Postal Equity App",

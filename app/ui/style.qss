@@ -1,0 +1,261 @@
+/* Michaud Postal Equity App Stylesheet */
+
+/* General Application Wide Styles (can be overridden by more specific selectors) */
+QWidget {
+    font-family: "Segoe UI", Arial, sans-serif; /* Example font stack */
+    font-size: 10pt; /* Base font size */
+    /* background-color: #F0F0F0; */ /* Moved to MainWindow for default tab background */
+    /* color: #333333; */ /* Base text color */
+}
+
+/* GroupBoxes - for sectioning content */
+QGroupBox {
+    font-weight: bold;
+    border: 1px solid #C0C0C0;
+    border-radius: 5px;
+    margin-top: 1ex; /* Space for title */
+    padding: 15px 10px 10px 10px; /* top, right, bottom, left (top padding to clear title) */
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding: 0 5px 0 5px;
+    left: 10px; /* Adjust to align title nicely */
+    /* background-color: #F0F0F0; */ /* Match parent background or specific color */
+}
+
+/* Input Fields */
+QLineEdit, QTextEdit, QComboBox, QSpinBox {
+    background-color: #FFFFFF;
+    border: 1px solid #B0B0B0;
+    border-radius: 3px;
+    padding: 4px;
+    color: #222222;
+}
+
+QLineEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus {
+    border: 1px solid #0078D7; /* Highlight color on focus, e.g., Windows blue */
+}
+
+QTextEdit {
+    selection-background-color: #0078D7;
+    selection-color: white;
+}
+
+/* Buttons */
+QPushButton {
+    background-color: #E1E1E1;
+    border: 1px solid #ADADAD;
+    border-radius: 3px;
+    padding: 5px 12px;
+    min-height: 20px; /* Ensure decent height */
+    color: #333333;
+}
+
+QPushButton:hover {
+    background-color: #E5F1FB; /* Light blue hover */
+    border-color: #0078D7;
+}
+
+QPushButton:pressed {
+    background-color: #CCE4F7; /* Darker blue when pressed */
+    border-color: #005499;
+}
+
+QPushButton:disabled {
+    background-color: #D3D3D3;
+    color: #A0A0A0;
+    border-color: #C0C0C0;
+}
+
+/* Tab Widget Styling */
+QTabWidget::pane { /* The Cointainer for the pages */
+    border: 1px solid #C0C0C0;
+    border-top: none; /* Pane border often looks better without top if tabs are on top */
+    background-color: #FFFFFF; /* Default background for tab content area */
+}
+
+QTabBar::tab {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #F0F0F0, stop:1 #E0E0E0);
+    border: 1px solid #C0C0C0;
+    border-bottom-color: #C0C0C0; /* Same as pane border */
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    min-width: 8ex;
+    padding: 6px 10px;
+    margin-right: 2px; /* Space between tabs */
+    color: #444444;
+}
+
+QTabBar::tab:selected {
+    background: #FFFFFF; /* Selected tab matches pane background */
+    border-color: #C0C0C0;
+    border-bottom-color: #FFFFFF; /* Make selected tab blend with pane */
+    color: #000000;
+    font-weight: bold;
+}
+
+QTabBar::tab:!selected:hover {
+    background: #E5F1FB; /* Light blue hover for non-selected tabs */
+}
+
+/* List Widget */
+QListWidget {
+    border: 1px solid #B0B0B0;
+    border-radius: 3px;
+    background-color: white;
+}
+
+QListWidget::item {
+    padding: 4px;
+}
+
+QListWidget::item:selected {
+    background-color: #0078D7; /* Standard selection blue */
+    color: white;
+}
+
+QListWidget::item:hover {
+    background-color: #E5F1FB;
+    color: black;
+}
+
+/* ScrollBars (can be styled extensively if desired) */
+QScrollBar:vertical {
+    border: 1px solid #C0C0C0;
+    background: #F0F0F0;
+    width: 15px;
+    margin: 0px 0px 0px 0px;
+}
+QScrollBar::handle:vertical {
+    background: #B0B0B0;
+    min-height: 20px;
+    border-radius: 3px;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    border: none;
+    background: none;
+    height: 0px; /* Hide arrows if not needed, or style them */
+    width: 0px;
+}
+/* Similar styles for QScrollBar:horizontal */
+
+/* QLabel (specific for status messages or headers if needed) */
+/* Example: QLabel#statusLabel { color: red; font-style: italic; } */
+
+/* QMessageBox (can be styled but often uses system style) */
+/* For more control, you'd create custom dialogs */
+
+/* QDialog specific styles */
+QDialog {
+    background-color: #F8F8F8; /* Slightly different background for dialogs */
+}
+
+/* Specific View Styles (can be added using object names) */
+/* For example: */
+QWidget#MasterAIDashboardView {
+    /* background-color: #EFEFEF; */ /* Example if jurisdictional colors are off */
+    /* border: 1px solid #D0D0D0; */
+}
+
+QWidget#MasterAIDashboardView QGroupBox {
+    font-size: 11pt; /* Slightly larger group titles for dashboard */
+    /* background-color: rgba(255, 255, 255, 0.5); */ /* Semi-transparent white background for groups */
+}
+
+QWidget#MasterAIDashboardView QPushButton#dashboardActionButton { /* If objectName is set */
+    font-size: 11pt;
+    padding: 8px 15px;
+    /* background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #60A0F0, stop:1 #4A7CB0); */
+    /* color: white; */
+    /* border: 1px solid #3A5C80; */
+}
+/* Add hover/pressed for dashboardActionButton if custom background is used */
+
+
+QWidget#LawLibraryView {
+    /* background-color: #FDFDFD; */
+}
+
+QWidget#LawLibraryView QListWidget {
+    font-size: 10pt;
+    /* border: 1px solid #C8C8C8; */
+}
+QWidget#LawLibraryView QTextEdit { /* The content viewer */
+    font-family: "Consolas", "Courier New", monospace; /* Monospaced font for code/text files */
+    font-size: 9.5pt;
+    background-color: #FCFCFC;
+    /* border: 1px solid #C8C8C8; */
+    color: #222;
+}
+
+/* Example of a more "powerful" or "action" button style */
+QPushButton.actionButton { /* Apply this class via setProperty("class", "actionButton") in Python */
+    font-weight: bold;
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #50C050, stop:1 #3E903E); /* Greenish */
+    color: white;
+    border: 1px solid #307030;
+}
+QPushButton.actionButton:hover {
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #60D060, stop:1 #4EA04E);
+}
+QPushButton.actionButton:pressed {
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #40B040, stop:1 #2E802E);
+}
+
+/* Example for critical/destructive action buttons */
+QPushButton.destructiveButton {
+    font-weight: bold;
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #D05050, stop:1 #A03E3E); /* Reddish */
+    color: white;
+    border: 1px solid #803030;
+}
+QPushButton.destructiveButton:hover {
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #E06060, stop:1 #B04E4E);
+}
+QPushButton.destructiveButton:pressed {
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #C04040, stop:1 #902E2E);
+}
+
+
+/* Jurisdictional coloring will override QWidget background-color per tab */
+/* The styles above provide a base if jurisdictional colors are off */
+/* or for parts of views not directly covered by the dynamic coloring. */
+
+/* Style for input fields on colored backgrounds (from MainWindow._on_tab_changed) */
+/* This is a reminder that these are dynamically applied, but could be part of a QSS theme */
+/*
+QWidget[jurisdiction="equity"] QLineEdit,
+QWidget[jurisdiction="equity"] QTextEdit {
+    background-color: #FFFFFF;
+    color: black;
+}
+QWidget[jurisdiction="postal"] QLineEdit,
+QWidget[jurisdiction="postal"] QTextEdit {
+    background-color: #FFFFF0; // Light ivory for postal gold background
+    color: black;
+}
+*/
+
+/* Ensure input fields have good contrast if jurisdictional colors are dark */
+QLineEdit, QTextEdit, QComboBox, QSpinBox, QListWidget {
+    /* These are already defined above with white background, good for most cases */
+}
+QLabel { /* Ensure labels are readable on colored backgrounds */
+    /* This is tricky globally; best handled by MainWindow._on_tab_changed logic */
+    /* background-color: transparent; */ /* To let tab background show through */
+}
+
+/* Specific button styling for colored tabs if needed */
+/* Example for a "TrustView" which might have a dark blue (equity) background */
+/*
+QWidget#TrustView QPushButton {
+    color: white;
+    background-color: #4A6B8A;
+    border: 1px solid #708090;
+}
+QWidget#TrustView QPushButton:hover {
+    background-color: #5A7B9A;
+}
+*/
