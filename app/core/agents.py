@@ -116,9 +116,13 @@ class PostalEquityAppAI(BaseAgent):
                 response_message = no_doc_msg
 
         elif "help" in command_lower:
-            response_message = "Available commands:\n" \
-                               "- 'validate current document' / 'check conformity': Runs conformance check on active document.\n" \
-                               "- 'help': Shows this help message."
+            response_message = (
+                "Available Master AI commands:\n"
+                "- 'validate current document' or 'check conformity': Runs conformance check on the active document.\n"
+                "- 'search law library for [keywords]': Searches the Law Library for the given keywords.\n"
+                "- 'run system audit' or 'check system integrity': Performs basic system integrity checks.\n"
+                "- 'help': Shows this help message."
+            )
             add_dashboard_notification("Displaying help for Master AI commands.")
             # For more complex help, could return a structured object or specific UI update signal.
 
@@ -160,6 +164,29 @@ class PostalEquityAppAI(BaseAgent):
                 no_term_msg = "No search term provided for Law Library search."
                 add_dashboard_notification(no_term_msg)
                 response_message = no_term_msg
+
+        elif "system audit" in command_lower or "check system" in command_lower or "audit integrity" in command_lower:
+            add_dashboard_notification("Initiating system integrity audit...")
+            try:
+                sentinel = CodexSentinel(app_context=self.app_context)
+                audit_issues = sentinel.perform_system_audit()
+
+                if audit_issues:
+                    summary = f"System integrity audit found {len(audit_issues)} issue(s)."
+                    add_dashboard_notification(summary)
+                    for i, issue_item in enumerate(audit_issues):
+                        issue_msg = f"  Audit Issue {i+1}: {issue_item.get('issue', 'No details')} " \
+                                    f"(Type: {issue_item.get('type', 'N/A')}, Target: {issue_item.get('id', 'N/A')}, Severity: {issue_item.get('severity', 'N/A')})"
+                        add_dashboard_notification(issue_msg)
+                    response_message = summary + " See dashboard notifications for details."
+                else:
+                    summary = "System integrity audit complete. No issues found."
+                    add_dashboard_notification(summary)
+                    response_message = summary
+            except Exception as e:
+                error_msg = f"Error during system integrity audit: {e}"
+                add_dashboard_notification(error_msg)
+                response_message = error_msg
 
         else:
             unrec_msg = f"Unrecognized command: '{command}'. Type 'help' for available commands."
@@ -431,18 +458,94 @@ class CodexSentinel(BaseAgent):
     """
     def __init__(self, app_context=None):
         super().__init__(agent_name="Codex Sentinel", app_context=app_context)
+        self.data_root_dir = "data" # Consistent with AutoBackup
 
-    def perform_system_audit(self):
-        self.set_status("Performing system-wide audit.")
-        # Placeholder: Logic to scan agent behavior, document integrity, Codex Vault consistency
-        print(f"{self.agent_name}: Auditing system logic, agent states, and document consistency. (Placeholder)")
-        # Would check for drift, conflicts, and adherence to Lex Triad principles.
-        audit_results = {"issues_detected": 0, "recommendations": [], "status": "Simulated"}
-        if audit_results["issues_detected"] > 0:
-            # self.force_healing_protocol() # Example of a further action
-            pass
+    def perform_system_audit(self) -> list:
+        self.set_status("Performing system integrity audit.")
+        issues_report = []
+
+        # Check 1: Document files in active_sessions.json vs. disk
+        active_sessions_file_path = os.path.join(self.data_root_dir, "active_sessions.json")
+        if os.path.exists(active_sessions_file_path):
+            try:
+                with open(active_sessions_file_path, 'r') as f:
+                    active_sessions = json.load(f)
+
+                for doc_id, session_data in active_sessions.items():
+                    doc_path = session_data.get("path")
+                    if doc_path:
+                        # Paths in active_sessions.json might be absolute or relative.
+                        # For this check, assume they are directly usable or relative to project root.
+                        # If always relative to data/, construct full path: os.path.join(self.data_root_dir, doc_path)
+                        # For now, let's assume paths are stored in a way that os.path.exists can check them.
+                        # If paths are stored relative to project root, this is fine.
+                        # If relative to 'data/', then adjust:
+                        # check_path = doc_path if os.path.isabs(doc_path) else os.path.join(self.data_root_dir, doc_path)
+                        # For simplicity, let's assume paths are stored as absolute or directly usable relative paths.
+                        if not os.path.exists(doc_path):
+                            issues_report.append({
+                                "type": "integrity_check",
+                                "id": doc_id,
+                                "issue": f"Tracked document file missing: Path '{doc_path}' from active_sessions.json for doc ID '{doc_id}' does not exist.",
+                                "severity": "warning"
+                            })
+            except json.JSONDecodeError:
+                issues_report.append({
+                    "type": "integrity_check",
+                    "id": active_sessions_file_path,
+                    "issue": f"Could not parse 'active_sessions.json'. File may be corrupted.",
+                    "severity": "error"
+                })
+            except Exception as e:
+                issues_report.append({
+                    "type": "integrity_check",
+                    "id": active_sessions_file_path,
+                    "issue": f"Error reading 'active_sessions.json': {e}",
+                    "severity": "error"
+                })
+        else:
+            issues_report.append({
+                "type": "integrity_check",
+                "id": active_sessions_file_path,
+                "issue": "'active_sessions.json' not found. Cannot verify tracked document integrity.",
+                "severity": "info" # Info, as it might be a fresh install
+            })
+
+        # Check 2: JSON structure of key config files
+        config_files_to_check = {
+            "app_settings.json": os.path.join(self.data_root_dir, "app_settings.json"),
+            "personal_profiles.json": os.path.join(self.data_root_dir, "personal_profiles.json")
+        }
+        for filename, filepath in config_files_to_check.items():
+            if os.path.exists(filepath):
+                try:
+                    with open(filepath, 'r') as f:
+                        json.load(f) # Attempt to parse
+                except json.JSONDecodeError:
+                    issues_report.append({
+                        "type": "integrity_check",
+                        "id": filename,
+                        "issue": f"Configuration file '{filename}' is not valid JSON or is corrupted.",
+                        "severity": "error"
+                    })
+                except Exception as e:
+                     issues_report.append({
+                        "type": "integrity_check",
+                        "id": filename,
+                        "issue": f"Error reading configuration file '{filename}': {e}",
+                        "severity": "error"
+                    })
+            # else: Not necessarily an error if a config file is optional and doesn't exist yet.
+            # For now, only report if it exists and is invalid.
+
+        if not issues_report:
+            print(f"{self.agent_name}: System integrity audit found no issues.")
+        else:
+            print(f"{self.agent_name}: System integrity audit found {len(issues_report)} issue(s).")
+            # Detailed printout will be handled by MasterAI or UI component that displays this.
+
         self.set_status("Idle")
-        return audit_results
+        return issues_report
 
     def force_healing_protocol(self):
         self.set_status("Initiating healing protocol.")
